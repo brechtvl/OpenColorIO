@@ -9,3 +9,6 @@ add_subdirectory(sampleicc)
 
 # xxHash
 add_subdirectory(xxHash)
+
+# rapidyaml
+add_subdirectory(rapidyaml)
