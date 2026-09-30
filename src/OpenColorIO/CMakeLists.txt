@@ -194,6 +194,8 @@ set(SOURCES
     ViewingRules.cpp
     ViewTransform.cpp
     SystemMonitor.cpp
+    YamlEmitter.cpp
+    YamlNode.cpp
 )
 
 # Install the pkg-config file.
@@ -328,7 +330,7 @@ target_link_libraries(OpenColorIO
         "$<BUILD_INTERFACE:utils::from_chars>"
         "$<BUILD_INTERFACE:utils::strings>"
         "$<BUILD_INTERFACE:xxHash>"
-        yaml-cpp::yaml-cpp
+        "$<BUILD_INTERFACE:rapidyaml>"
         MINIZIP::minizip-ng
 )
 

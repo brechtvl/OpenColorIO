@@ -14,7 +14,7 @@
 #include "ParseUtils.h"
 #include "PathUtils.h"
 #include "utils/StringUtils.h"
-#include "yaml-cpp/yaml.h"
+#include "YamlEmitter.h"
 
 namespace OCIO_NAMESPACE
 {
@@ -33,7 +33,7 @@ OCIOMYaml::OCIOMYaml()
     }
 }
 
-void OCIOMYaml::load(const YAML::Node & node, std::string & x)
+void OCIOMYaml::load(const YamlRead::Node & node, std::string & x)
 {
     try
     {
@@ -49,7 +49,7 @@ void OCIOMYaml::load(const YAML::Node & node, std::string & x)
     }
 }
 
-void OCIOMYaml::load(const YAML::Node & node, std::vector<std::string> & x)
+void OCIOMYaml::load(const YamlRead::Node & node, std::vector<std::string> & x)
 {
     try
     {
@@ -66,7 +66,7 @@ void OCIOMYaml::load(const YAML::Node & node, std::vector<std::string> & x)
 }
 
 void OCIOMYaml::throwValueError(const std::string & nodeName,
-                                       const YAML::Node & key,
+                                       const YamlRead::Node & key,
                                        const std::string & msg)
 {
     std::string keyName;
@@ -80,11 +80,11 @@ void OCIOMYaml::throwValueError(const std::string & nodeName,
     throw Exception(os.str().c_str());
 }
 
-void OCIOMYaml::CheckDuplicates(const YAML::Node & node)
+void OCIOMYaml::CheckDuplicates(const YamlRead::Node & node)
 {
     std::unordered_set<std::string> keyset;
 
-    for (YAML::const_iterator iter = node.begin(); iter != node.end(); ++iter)
+    for (YamlRead::ConstIterator iter = node.begin(); iter != node.end(); ++iter)
     {
         const std::string & key = iter->first.as<std::string>();
         if (keyset.find(key) == keyset.end())
@@ -101,16 +101,16 @@ void OCIOMYaml::CheckDuplicates(const YAML::Node & node)
     }
 }
 
-ConfigMergingParameters::MergeStrategies OCIOMYaml::genericStrategyHandler(const YAML::Node & pnode, const YAML::Node & node)
+ConfigMergingParameters::MergeStrategies OCIOMYaml::genericStrategyHandler(const YamlRead::Node & pnode, const YamlRead::Node & node)
 {
-    if(node.Type() != YAML::NodeType::Map)
+    if(node.Type() != YamlRead::NodeType::Map)
     {
         throwValueError(node.Tag(), pnode,
                         "The value type of a property 'strategy' needs to be a map.");
     }
     
     std::string strategy;
-    for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+    for (YamlRead::ConstIterator it = node.begin(); it != node.end(); ++it)
     {
         const std::string & prop = it->first.as<std::string>();
         const std::string & value = it->second.as<std::string>();
@@ -132,11 +132,11 @@ ConfigMergingParameters::MergeStrategies OCIOMYaml::genericStrategyHandler(const
     return srategyEnum;
 }
 
-void OCIOMYaml::loadOptions(const YAML::Node & node, ConfigMergingParametersRcPtr & params)
+void OCIOMYaml::loadOptions(const YamlRead::Node & node, ConfigMergingParametersRcPtr & params)
 {
     CheckDuplicates(node);
 
-    for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+    for (YamlRead::ConstIterator it = node.begin(); it != node.end(); ++it)
     {
         const std::string & key = it->first.as<std::string>();
         if (key == "input_family_prefix")
@@ -184,13 +184,13 @@ void OCIOMYaml::loadOptions(const YAML::Node & node, ConfigMergingParametersRcPt
     }
 }
 
-void OCIOMYaml::loadOverrides(const YAML::Node & node, ConfigMergingParametersRcPtr & params)
+void OCIOMYaml::loadOverrides(const YamlRead::Node & node, ConfigMergingParametersRcPtr & params)
 {
     CheckDuplicates(node);
 
     std::string stringval;
 
-    for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+    for (YamlRead::ConstIterator it = node.begin(); it != node.end(); ++it)
     {
         const std::string & key = it->first.as<std::string>();
 
@@ -225,12 +225,12 @@ void OCIOMYaml::loadOverrides(const YAML::Node & node, ConfigMergingParametersRc
         }
         else if (key == "environment")
         {
-            if(it->second.Type() != YAML::NodeType::Map)
+            if(it->second.Type() != YamlRead::NodeType::Map)
             {
                 throwValueError(node.Tag(), it->first, 
                                 "The value type of key 'environment' needs to be a map.");
             }
-            for (YAML::const_iterator itEnv = it->second.begin(); itEnv != it->second.end(); ++itEnv)
+            for (YamlRead::ConstIterator itEnv = it->second.begin(); itEnv != it->second.end(); ++itEnv)
             {
                 const std::string & k = itEnv->first.as<std::string>();
                 const std::string & v = itEnv->second.as<std::string>();
@@ -261,12 +261,12 @@ void OCIOMYaml::loadOverrides(const YAML::Node & node, ConfigMergingParametersRc
     }
 }
 
-void OCIOMYaml::loadParams(const YAML::Node & node, ConfigMergingParametersRcPtr & params)
+void OCIOMYaml::loadParams(const YamlRead::Node & node, ConfigMergingParametersRcPtr & params)
 {
     // Check for duplicates in params.
     CheckDuplicates(node);
 
-    for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+    for (YamlRead::ConstIterator it = node.begin(); it != node.end(); ++it)
     {
         const std::string & key = it->first.as<std::string>();
         if (key == "roles")
@@ -304,12 +304,12 @@ void OCIOMYaml::loadParams(const YAML::Node & node, ConfigMergingParametersRcPtr
     }
 }
 
-void OCIOMYaml::load(const YAML::Node& node, ConfigMergerRcPtr & merger, const char * filename)
+void OCIOMYaml::load(const YamlRead::Node& node, ConfigMergerRcPtr & merger, const char * filename)
 {
     CheckDuplicates(node);
 
     // Parse all properties.
-    for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+    for (YamlRead::ConstIterator it = node.begin(); it != node.end(); ++it)
     {
         const std::string & key = it->first.as<std::string>();
 
@@ -377,20 +377,20 @@ void OCIOMYaml::load(const YAML::Node& node, ConfigMergerRcPtr & merger, const c
         }
         else if (key == "merge")
         {
-            if(it->second.Type() != YAML::NodeType::Map)
+            if(it->second.Type() != YamlRead::NodeType::Map)
             {
                 throwValueError(it->second.Tag(), it->first,
                                 "The value type of the key 'merge' needs to be a map.");
             }
 
             int mergesCounter = 0;
-            for (YAML::const_iterator mergeIt = it->second.begin(); mergeIt != it->second.end(); ++mergeIt)
+            for (YamlRead::ConstIterator mergeIt = it->second.begin(); mergeIt != it->second.end(); ++mergeIt)
             {
                 const std::string & mergedConfigName = mergeIt->first.as<std::string>();
                 ConfigMergingParametersRcPtr params = merger->getParams(mergesCounter);
                 params->setOutputName(mergedConfigName.c_str());
 
-                for (YAML::const_iterator paramsIt = mergeIt->second.begin(); paramsIt != mergeIt->second.end(); ++paramsIt)
+                for (YamlRead::ConstIterator paramsIt = mergeIt->second.begin(); paramsIt != mergeIt->second.end(); ++paramsIt)
                 {
                     const std::string & key = paramsIt->first.as<std::string>();
                     
@@ -429,14 +429,14 @@ void OCIOMYaml::load(const YAML::Node& node, ConfigMergerRcPtr & merger, const c
     }    
 }
 
-int OCIOMYaml::countMerges(const YAML::Node& node)
+int OCIOMYaml::countMerges(const YamlRead::Node& node)
 {
     int numOfMerges = 0;
 
     CheckDuplicates(node);
 
     // Parse all properties.
-    for (YAML::const_iterator it = node.begin(); it != node.end(); ++it)
+    for (YamlRead::ConstIterator it = node.begin(); it != node.end(); ++it)
     {
         const std::string & key = it->first.as<std::string>();
 
@@ -444,7 +444,7 @@ int OCIOMYaml::countMerges(const YAML::Node& node)
 
         if (key == "merge")
         {
-            if(it->second.Type() != YAML::NodeType::Map)
+            if(it->second.Type() != YamlRead::NodeType::Map)
             {
                 throwValueError(it->second.Tag(), it->first,
                                 "The value type of the key 'merge' needs to be a map.");
@@ -452,7 +452,7 @@ int OCIOMYaml::countMerges(const YAML::Node& node)
 
             CheckDuplicates(it->second);
 
-            for (YAML::const_iterator mergeIt = it->second.begin(); mergeIt != it->second.end(); ++mergeIt)
+            for (YamlRead::ConstIterator mergeIt = it->second.begin(); mergeIt != it->second.end(); ++mergeIt)
             {
                 numOfMerges++;
             }
@@ -466,7 +466,7 @@ void OCIOMYaml::read(std::istream & istream, ConfigMergerRcPtr & merger, const c
 {
     try
     {
-        YAML::Node node = YAML::Load(istream);
+        YamlRead::Node node = YamlRead::Load(istream);
         load(node, merger, filepath);
     }
     catch(const std::exception & e)
@@ -520,150 +520,150 @@ const char * OCIOMYaml::EnumToStrategyString(ConfigMergingParameters::MergeStrat
 namespace
 {
 
-inline void save(YAML::Emitter & out, const ConfigMerger & merger)
+inline void save(YamlWrite::Emitter & out, const ConfigMerger & merger)
 {
     std::stringstream ss;
     const unsigned parserMajorVersion = merger.getMajorVersion();
     ss << parserMajorVersion;
     ss << "." << merger.getMinorVersion();
 
-    out << YAML::Block;
-    out << YAML::BeginMap;
-    out << YAML::Key << "ociom_version" << YAML::Value << ss.str();
-    out << YAML::Key << "search_path";
-    out << YAML::Value << YAML::BeginSeq;
+    out << YamlWrite::Block;
+    out << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "ociom_version" << YamlWrite::Value << ss.str();
+    out << YamlWrite::Key << "search_path";
+    out << YamlWrite::Value << YamlWrite::BeginSeq;
     for (int i = 0; i < merger.getNumSearchPaths(); i++)
     {
-        out << YAML::Value << merger.getSearchPath(i);
+        out << YamlWrite::Value << merger.getSearchPath(i);
     }
-    out << YAML::EndSeq;
-    out << YAML::Newline;
+    out << YamlWrite::EndSeq;
+    out << YamlWrite::Newline;
 
-    out << YAML::Key << "merge";
-    out << YAML::Value << YAML::BeginMap;
+    out << YamlWrite::Key << "merge";
+    out << YamlWrite::Value << YamlWrite::BeginMap;
 
     for (int mp = 0; mp < merger.getNumConfigMergingParameters(); mp++)
     {
         // Serialized every merge section.
         ConfigMergingParametersRcPtr p = merger.getParams(mp);
-        out << YAML::Key << p->getOutputName();
-        out << YAML::Value << YAML::BeginMap;
+        out << YamlWrite::Key << p->getOutputName();
+        out << YamlWrite::Value << YamlWrite::BeginMap;
 
-        out << YAML::Key << "base" << YAML::Value << p->getBaseConfigName();
-        out << YAML::Key << "input" << YAML::Value << p->getInputConfigName();
-        out << YAML::Newline;
+        out << YamlWrite::Key << "base" << YamlWrite::Value << p->getBaseConfigName();
+        out << YamlWrite::Key << "input" << YamlWrite::Value << p->getInputConfigName();
+        out << YamlWrite::Newline;
 
-        out << YAML::Key << "options";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "input_family_prefix" << YAML::Value << p->getInputFamilyPrefix();
-        out << YAML::Key << "base_family_prefix" << YAML::Value << p->getBaseFamilyPrefix();
-        out << YAML::Key << "input_first" << YAML::Value << p->isInputFirst();
-        out << YAML::Key << "error_on_conflict" << YAML::Value << p->isErrorOnConflict();
-        out << YAML::Key << "default_strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getDefaultStrategy());
-        out << YAML::Key << "avoid_duplicates" << YAML::Value << p->isAvoidDuplicates();
-        out << YAML::Key << "adjust_input_reference_space" << YAML::Value << p->isAdjustInputReferenceSpace();
+        out << YamlWrite::Key << "options";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "input_family_prefix" << YamlWrite::Value << p->getInputFamilyPrefix();
+        out << YamlWrite::Key << "base_family_prefix" << YamlWrite::Value << p->getBaseFamilyPrefix();
+        out << YamlWrite::Key << "input_first" << YamlWrite::Value << p->isInputFirst();
+        out << YamlWrite::Key << "error_on_conflict" << YamlWrite::Value << p->isErrorOnConflict();
+        out << YamlWrite::Key << "default_strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getDefaultStrategy());
+        out << YamlWrite::Key << "avoid_duplicates" << YamlWrite::Value << p->isAvoidDuplicates();
+        out << YamlWrite::Key << "adjust_input_reference_space" << YamlWrite::Value << p->isAdjustInputReferenceSpace();
         // End of options section.
-        out << YAML::EndMap;
-        out << YAML::Newline;
+        out << YamlWrite::EndMap;
+        out << YamlWrite::Newline;
 
-        out << YAML::Key << "overrides";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "name" << YAML::Value << p->getName();
-        out << YAML::Key << "description" << YAML::Value << p->getDescription();
-        out << YAML::Key << "search_path" << YAML::Value << p->getSearchPath();
+        out << YamlWrite::Key << "overrides";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "name" << YamlWrite::Value << p->getName();
+        out << YamlWrite::Key << "description" << YamlWrite::Value << p->getDescription();
+        out << YamlWrite::Key << "search_path" << YamlWrite::Value << p->getSearchPath();
 
-        out << YAML::Key << "environment";
-        out << YAML::Value << YAML::BeginMap;
+        out << YamlWrite::Key << "environment";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
         for(int i = 0; i < p->getNumEnvironmentVars(); ++i)
         {   
             const char* name = p->getEnvironmentVar(i);
-            out << YAML::Key << name;
-            out << YAML::Value << p->getEnvironmentVarValue(i);
+            out << YamlWrite::Key << name;
+            out << YamlWrite::Value << p->getEnvironmentVarValue(i);
         }
-        out << YAML::EndMap;
-        out << YAML::Newline;
+        out << YamlWrite::EndMap;
+        out << YamlWrite::Newline;
 
-        out << YAML::Key << "active_displays";
+        out << YamlWrite::Key << "active_displays";
         StringUtils::StringVec active_displays;
         if (p->getActiveDisplays() != NULL && strlen(p->getActiveDisplays()) > 0)
             active_displays = SplitStringEnvStyle(p->getActiveDisplays());
-        out << YAML::Value << YAML::Flow << active_displays;
-        out << YAML::Newline;
+        out << YamlWrite::Value << YamlWrite::Flow << active_displays;
+        out << YamlWrite::Newline;
 
-        out << YAML::Key << "active_views";
+        out << YamlWrite::Key << "active_views";
         StringUtils::StringVec active_views;
         if (p->getActiveViews() != NULL && strlen(p->getActiveViews()) > 0)
             active_views = SplitStringEnvStyle(p->getActiveViews());
-        out << YAML::Value << YAML::Flow << active_views;
+        out << YamlWrite::Value << YamlWrite::Flow << active_views;
 
-        out << YAML::Key << "inactive_colorspaces";
+        out << YamlWrite::Key << "inactive_colorspaces";
         StringUtils::StringVec inactive_colorspaces;
         if (p->getInactiveColorSpaces() != NULL && strlen(p->getInactiveColorSpaces()) > 0)
             inactive_colorspaces = SplitStringEnvStyle(p->getInactiveColorSpaces());
-        out << YAML::Value << YAML::Flow << inactive_colorspaces;
+        out << YamlWrite::Value << YamlWrite::Flow << inactive_colorspaces;
 
         // End of overrides section.
-        out << YAML::EndMap;
-        out << YAML::Newline;
+        out << YamlWrite::EndMap;
+        out << YamlWrite::Newline;
 
-        out << YAML::Key << "params";
-        out << YAML::Value << YAML::BeginMap;
+        out << YamlWrite::Key << "params";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
 
-        out << YAML::Key << "roles";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getRoles());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "roles";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getRoles());
+        out << YamlWrite::EndMap;
 
-        out << YAML::Key << "file_rules";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getFileRules());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "file_rules";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getFileRules());
+        out << YamlWrite::EndMap;
 
-        out << YAML::Key << "display-views";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getDisplayViews());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "display-views";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getDisplayViews());
+        out << YamlWrite::EndMap;
 
-        out << YAML::Key << "view_transforms";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getViewTransforms());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "view_transforms";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getViewTransforms());
+        out << YamlWrite::EndMap;
 
-        out << YAML::Key << "looks";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getLooks());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "looks";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getLooks());
+        out << YamlWrite::EndMap;
 
-        out << YAML::Key << "colorspaces";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getColorspaces());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "colorspaces";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getColorspaces());
+        out << YamlWrite::EndMap;
 
-        out << YAML::Key << "named_transforms";
-        out << YAML::Value << YAML::BeginMap;
-        out << YAML::Key << "strategy" << YAML::Value << OCIOMYaml::EnumToStrategyString(p->getNamedTransforms());
-        out << YAML::EndMap;
+        out << YamlWrite::Key << "named_transforms";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "strategy" << YamlWrite::Value << OCIOMYaml::EnumToStrategyString(p->getNamedTransforms());
+        out << YamlWrite::EndMap;
 
         // End of params section.
-        out << YAML::EndMap;
+        out << YamlWrite::EndMap;
 
         // End of the current merge section.
-        out << YAML::EndMap;    
+        out << YamlWrite::EndMap;    
     }
 
     // End of the merges.
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 } // anon.
 
 void OCIOMYaml::write(std::ostream & ostream, const ConfigMerger & merger)
 {
-    YAML::Emitter out;
+    YamlWrite::Emitter out;
     save(out, merger);
-    ostream << out.c_str();
+    ostream << out.str();
 }
 
 } // namespace OCIO_NAMESPACE

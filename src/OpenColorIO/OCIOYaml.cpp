@@ -2,7 +2,6 @@
 // Copyright Contributors to the OpenColorIO Project.
 
 #include <cstring>
-#include <unordered_set>
 
 #include <pystring.h>
 
@@ -24,7 +23,8 @@
 #include "Platform.h"
 #include "utils/StringUtils.h"
 #include "ViewingRules.h"
-#include "yaml-cpp/yaml.h"
+#include "YamlEmitter.h"
+#include "YamlNode.h"
 
 
 namespace OCIO_NAMESPACE
@@ -32,7 +32,10 @@ namespace OCIO_NAMESPACE
 
 namespace
 {
-typedef YAML::const_iterator Iterator;
+typedef YamlRead::Node YamlNode;
+typedef YamlRead::NodeType YamlNodeType;
+typedef YamlRead::ConstIterator Iterator;
+inline YamlNode YamlLoad(std::istream & istream) { return YamlRead::Load(istream); }
 
 std::string SanitizeNewlines(const std::string &input)
 {
@@ -40,10 +43,10 @@ std::string SanitizeNewlines(const std::string &input)
         return input;
 
     // YAML is changing the trailing newlines when reading them:
-    // - Written as YAML::Literal (starts with a "|"), descriptions will be read back with a
+    // - Written as YamlWrite::Literal (starts with a "|"), descriptions will be read back with a
     //   single newline. One is  added if there was none, only one is kept if there were
     //   several.
-    // - Written as YAML::Value string (does not start with "|"), all trailing newlines ('\n')
+    // - Written as YamlWrite::Value string (does not start with "|"), all trailing newlines ('\n')
     //   are preserved.
     // Trailing newlines are inconsistently preserved, lets remove them in all cases.
     std::string str = input;
@@ -63,7 +66,7 @@ std::string SanitizeNewlines(const std::string &input)
 
 // Basic types
 
-inline void load(const YAML::Node& node, bool& x)
+inline void load(const YamlNode& node, bool& x)
 {
     try
     {
@@ -79,7 +82,7 @@ inline void load(const YAML::Node& node, bool& x)
     }
 }
 
-inline void load(const YAML::Node& node, double& x)
+inline void load(const YamlNode& node, double& x)
 {
     try
     {
@@ -95,7 +98,7 @@ inline void load(const YAML::Node& node, double& x)
     }
 }
 
-inline void load(const YAML::Node& node, std::string& x)
+inline void load(const YamlNode& node, std::string& x)
 {
     try
     {
@@ -111,7 +114,7 @@ inline void load(const YAML::Node& node, std::string& x)
     }
 }
 
-inline void load(const YAML::Node & node, StringUtils::StringVec & x)
+inline void load(const YamlNode & node, StringUtils::StringVec & x)
 {
     try
     {
@@ -127,7 +130,7 @@ inline void load(const YAML::Node & node, StringUtils::StringVec & x)
     }
 }
 
-inline void load(const YAML::Node & node, std::vector<float> & x)
+inline void load(const YamlNode & node, std::vector<float> & x)
 {
     try
     {
@@ -143,7 +146,7 @@ inline void load(const YAML::Node & node, std::vector<float> & x)
     }
 }
 
-inline void load(const YAML::Node& node, std::vector<double>& x)
+inline void load(const YamlNode& node, std::vector<double>& x)
 {
     try
     {
@@ -161,79 +164,79 @@ inline void load(const YAML::Node& node, std::vector<double>& x)
 
 // Enums
 
-inline void load(const YAML::Node& node, BitDepth& depth)
+inline void load(const YamlNode& node, BitDepth& depth)
 {
     std::string str;
     load(node, str);
     depth = BitDepthFromString(str.c_str());
 }
 
-inline void save(YAML::Emitter& out, BitDepth depth)
+inline void save(YamlWrite::Emitter& out, BitDepth depth)
 {
     out << BitDepthToString(depth);
 }
 
-inline void load(const YAML::Node& node, Allocation& alloc)
+inline void load(const YamlNode& node, Allocation& alloc)
 {
     std::string str;
     load(node, str);
     alloc = AllocationFromString(str.c_str());
 }
 
-inline void save(YAML::Emitter& out, Allocation alloc)
+inline void save(YamlWrite::Emitter& out, Allocation alloc)
 {
     out << AllocationToString(alloc);
 }
 
 
-inline void load(const YAML::Node& node, TransformDirection& dir)
+inline void load(const YamlNode& node, TransformDirection& dir)
 {
     std::string str;
     load(node, str);
     dir = TransformDirectionFromString(str.c_str());
 }
 
-inline void save(YAML::Emitter& out, TransformDirection dir)
+inline void save(YamlWrite::Emitter& out, TransformDirection dir)
 {
     out << TransformDirectionToString(dir);
 }
 
-inline void load(const YAML::Node& node, Interpolation& interp)
+inline void load(const YamlNode& node, Interpolation& interp)
 {
     std::string str;
     load(node, str);
     interp = InterpolationFromString(str.c_str());
 }
 
-inline void save(YAML::Emitter& out, Interpolation interp)
+inline void save(YamlWrite::Emitter& out, Interpolation interp)
 {
     out << InterpolationToString(interp);
 }
 
-inline void loadDescription(const YAML::Node& node, std::string& x)
+inline void loadDescription(const YamlNode& node, std::string& x)
 {
     load(node, x);
     x = SanitizeNewlines(x);
 }
 
-inline void saveDescription(YAML::Emitter & out, const char * desc)
+inline void saveDescription(YamlWrite::Emitter & out, const char * desc)
 {
     if (desc && *desc)
     {
         // Remove trailing newlines so that only one is saved because they won't be read back.
         std::string descStr = SanitizeNewlines(desc);
 
-        out << YAML::Key << "description" << YAML::Value;
+        out << YamlWrite::Key << "description" << YamlWrite::Value;
         if (descStr.find_first_of('\n') != std::string::npos)
         {
-            out << YAML::Literal;
+            out << YamlWrite::Literal;
         }
         out << descStr;
     }
 }
 
-inline void LogUnknownKeyWarning(const YAML::Node & node,
-                                 const YAML::Node & key)
+inline void LogUnknownKeyWarning(const YamlNode & node,
+                                 const YamlNode & key)
 {
     std::string keyName;
     load(key, keyName);
@@ -246,7 +249,7 @@ inline void LogUnknownKeyWarning(const YAML::Node & node,
 }
 
 inline void LogUnknownKeyWarning(const std::string & name,
-                                 const YAML::Node & tag)
+                                 const YamlNode & tag)
 {
     std::string key;
     load(tag, key);
@@ -256,7 +259,7 @@ inline void LogUnknownKeyWarning(const std::string & name,
     LogWarning(os.str());
 }
 
-inline void throwError(const YAML::Node & node,
+inline void throwError(const YamlNode & node,
                        const std::string & msg)
 {
     std::ostringstream os;
@@ -268,7 +271,7 @@ inline void throwError(const YAML::Node & node,
 }
 
 inline void throwValueError(const std::string & nodeName,
-                            const YAML::Node & key,
+                            const YamlNode & key,
                             const std::string & msg)
 {
     std::string keyName;
@@ -282,7 +285,7 @@ inline void throwValueError(const std::string & nodeName,
     throw Exception(os.str().c_str());
 }
 
-inline void throwValueError(const YAML::Node & key,
+inline void throwValueError(const YamlNode & key,
                             const std::string & msg)
 {
     std::string keyName;
@@ -298,25 +301,25 @@ inline void throwValueError(const YAML::Node & key,
 
 // Duplicate Checker
 
-inline void CheckDuplicates(const YAML::Node & node)
+inline void CheckDuplicates(const YamlNode & node)
 {
-    std::unordered_set<std::string> keyset;
+    // Linear search is faster than a hash set for the small maps in configs.
+    std::vector<std::string> keys;
+    keys.reserve(node.size());
 
     for (Iterator iter = node.begin(); iter != node.end(); ++iter)
     {
-        const std::string & key = iter->first.as<std::string>();
+        std::string key = iter->first.as<std::string>();
 
-        if (keyset.find(key) == keyset.end())
-        {
-            keyset.insert(key);
-        }
-        else
+        if (std::find(keys.begin(), keys.end(), key) != keys.end())
         {
             std::ostringstream os;
             os << "Key-value pair with key '" << key;
             os << "' specified more than once. ";
             throwValueError(node.Tag(), iter->first, os.str());
         }
+
+        keys.push_back(std::move(key));
     }
 }
 
@@ -324,13 +327,13 @@ inline void CheckDuplicates(const YAML::Node & node)
 
 struct CustomKeysLoader
 {
-    using Type = std::vector<std::pair<YAML::Node, YAML::Node>>;
+    using Type = std::vector<std::pair<YamlNode, YamlNode>>;
     Type m_keyVals;
 };
 
-inline void loadCustomKeys(const YAML::Node& node, CustomKeysLoader & ck, const char* sectionName)
+inline void loadCustomKeys(const YamlNode& node, CustomKeysLoader & ck, const char* sectionName)
 {
-    if (node.Type() == YAML::NodeType::Map)
+    if (node.Type() == YamlNodeType::Map)
     {
         for (Iterator iter = node.begin(); iter != node.end(); ++iter)
         {
@@ -348,34 +351,34 @@ inline void loadCustomKeys(const YAML::Node& node, CustomKeysLoader & ck, const 
 // Interchange Attributes
 
 void saveInterchangeAttributes(
-    YAML::Emitter& out, 
+    YamlWrite::Emitter& out, 
     const std::map<std::string, std::string>& interchangemap)
 {
     if (interchangemap.empty()) 
         return;
 
-    out << YAML::Key << "interchange";
-    out << YAML::Value;
-    out << YAML::BeginMap;
+    out << YamlWrite::Key << "interchange";
+    out << YamlWrite::Value;
+    out << YamlWrite::BeginMap;
     for (const auto& keyval : interchangemap)
     {
         std::string valStr = SanitizeNewlines(keyval.second);
 
-        out << YAML::Key << keyval.first << YAML::Value;
+        out << YamlWrite::Key << keyval.first << YamlWrite::Value;
         if (valStr.find_first_of('\n') != std::string::npos)
         {
-            out << YAML::Literal;
+            out << YamlWrite::Literal;
         }
         out << valStr;
     }
 
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 template<class T>
-void loadInterchangeAttributes(const YAML::Node& node, T& owner)
+void loadInterchangeAttributes(const YamlNode& node, T& owner)
 {
-    if (node.Type() != YAML::NodeType::Map)
+    if (node.Type() != YamlNodeType::Map)
     {
         std::ostringstream os;
         os << "The 'interchange' content needs to be a map.";
@@ -406,7 +409,7 @@ void loadInterchangeAttributes(const YAML::Node& node, T& owner)
 
 // View
 
-inline void load(const YAML::Node& node, View& v)
+inline void load(const YamlNode& node, View& v)
 {
     if(node.Tag() != "View")
         return;
@@ -455,7 +458,7 @@ inline void load(const YAML::Node& node, View& v)
         }
         else if (key == "aliases")
         {
-            // This uses load(const YAML::Node & node, StringUtils::StringVec & x), so the
+            // This uses load(const YamlNode & node, StringUtils::StringVec & x), so the
             // Yaml parser handles unquoting view names with embedded quotes, symmetric with
             // the save function below, rather than using SplitStringEnvStyle.
             load(iter->second, v.m_aliases);
@@ -484,42 +487,42 @@ inline void load(const YAML::Node& node, View& v)
     }
 }
 
-inline void save(YAML::Emitter& out, const View & view)
+inline void save(YamlWrite::Emitter& out, const View & view)
 {
-    out << YAML::VerbatimTag("View");
-    out << YAML::Flow;
-    out << YAML::BeginMap;
-    out << YAML::Key << "name" << YAML::Value << view.m_name;
+    out << YamlWrite::VerbatimTag("View");
+    out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "name" << YamlWrite::Value << view.m_name;
     if (view.m_viewTransform.empty())
     {
-        out << YAML::Key << "colorspace" << YAML::Value << view.m_colorspace;
+        out << YamlWrite::Key << "colorspace" << YamlWrite::Value << view.m_colorspace;
     }
     else
     {
-        out << YAML::Key << "view_transform" << YAML::Value << view.m_viewTransform;
-        out << YAML::Key << "display_colorspace" << YAML::Value << view.m_colorspace;
+        out << YamlWrite::Key << "view_transform" << YamlWrite::Value << view.m_viewTransform;
+        out << YamlWrite::Key << "display_colorspace" << YamlWrite::Value << view.m_colorspace;
     }
     if (!view.m_looks.empty())
     {
-        out << YAML::Key << "looks" << YAML::Value << view.m_looks;
+        out << YamlWrite::Key << "looks" << YamlWrite::Value << view.m_looks;
     }
     if (!view.m_rule.empty())
     {
-        out << YAML::Key << "rule" << YAML::Value << view.m_rule;
+        out << YamlWrite::Key << "rule" << YamlWrite::Value << view.m_rule;
     }
     if (!view.m_aliases.empty())
     {
         // The Yaml parser automatically quotes view name aliases that contain commas, so
         // they are not confused with separators. No need to use JoinStringEnvStyle here.
-        out << YAML::Key << "aliases" << YAML::Value << view.m_aliases;
+        out << YamlWrite::Key << "aliases" << YamlWrite::Value << view.m_aliases;
     }
     saveDescription(out, view.m_description.c_str());
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // Common Transform
 
-inline void EmitBaseTransformKeyValues(YAML::Emitter & out,
+inline void EmitBaseTransformKeyValues(YamlWrite::Emitter & out,
                                         const ConstTransformRcPtr & t)
 {
     switch (t->getDirection())
@@ -527,27 +530,27 @@ inline void EmitBaseTransformKeyValues(YAML::Emitter & out,
     case TRANSFORM_DIR_FORWARD:
         break;
     case TRANSFORM_DIR_INVERSE:
-        out << YAML::Key << "direction";
-        out << YAML::Value << YAML::Flow;
+        out << YamlWrite::Key << "direction";
+        out << YamlWrite::Value << YamlWrite::Flow;
         save(out, t->getDirection());
         break;
     }
 }
 
-inline void EmitTransformName(YAML::Emitter & out,
+inline void EmitTransformName(YamlWrite::Emitter & out,
                               const FormatMetadata & metadata)
 {
     const FormatMetadataImpl & data = dynamic_cast<const FormatMetadataImpl &>(metadata);
     const std::string & name = data.getName();
     if (!name.empty())
     {
-        out << YAML::Key << "name" << YAML::Value << name;
+        out << YamlWrite::Key << "name" << YamlWrite::Value << name;
     }
 }
 
 // AllocationTransform
 
-inline void load(const YAML::Node& node, AllocationTransformRcPtr& t)
+inline void load(const YamlNode& node, AllocationTransformRcPtr& t)
 {
     t = AllocationTransform::Create();
 
@@ -587,30 +590,30 @@ inline void load(const YAML::Node& node, AllocationTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstAllocationTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstAllocationTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("AllocationTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("AllocationTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
-    out << YAML::Key << "allocation";
-    out << YAML::Value << YAML::Flow;
+    out << YamlWrite::Key << "allocation";
+    out << YamlWrite::Value << YamlWrite::Flow;
     save(out, t->getAllocation());
 
     if(t->getNumVars() > 0)
     {
         std::vector<float> vars(t->getNumVars());
         t->getVars(&vars[0]);
-        out << YAML::Key << "vars";
-        out << YAML::Flow << YAML::Value << vars;
+        out << YamlWrite::Key << "vars";
+        out << YamlWrite::Flow << YamlWrite::Value << vars;
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // BuiltinTransform
 
-inline void load(const YAML::Node & node, BuiltinTransformRcPtr & t)
+inline void load(const YamlNode & node, BuiltinTransformRcPtr & t)
 {
     t = BuiltinTransform::Create();
 
@@ -641,22 +644,22 @@ inline void load(const YAML::Node & node, BuiltinTransformRcPtr & t)
     }
 }
 
-inline void save(YAML::Emitter & out, const ConstBuiltinTransformRcPtr & t)
+inline void save(YamlWrite::Emitter & out, const ConstBuiltinTransformRcPtr & t)
 {
-    out << YAML::VerbatimTag("BuiltinTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("BuiltinTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << t->getStyle();
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << t->getStyle();
 
     EmitBaseTransformKeyValues(out, t);
 
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // CDLTransform
 
-inline void load(const YAML::Node& node, CDLTransformRcPtr& t)
+inline void load(const YamlNode& node, CDLTransformRcPtr& t)
 {
     t = CDLTransform::Create();
 
@@ -738,10 +741,10 @@ inline void load(const YAML::Node& node, CDLTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstCDLTransformRcPtr t, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstCDLTransformRcPtr t, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("CDLTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("CDLTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     if (majorVersion >= 2)
     {
@@ -752,43 +755,43 @@ inline void save(YAML::Emitter& out, ConstCDLTransformRcPtr t, unsigned int majo
     t->getSlope(&slope[0]);
     if (!IsVecEqualToOne(&slope[0], 3))
     {
-        out << YAML::Key << "slope";
-        out << YAML::Value << YAML::Flow << slope;
+        out << YamlWrite::Key << "slope";
+        out << YamlWrite::Value << YamlWrite::Flow << slope;
     }
 
     std::vector<double> offset(3);
     t->getOffset(&offset[0]);
     if (!IsVecEqualToZero(&offset[0], 3))
     {
-        out << YAML::Key << "offset";
-        out << YAML::Value << YAML::Flow << offset;
+        out << YamlWrite::Key << "offset";
+        out << YamlWrite::Value << YamlWrite::Flow << offset;
     }
 
     std::vector<double> power(3);
     t->getPower(&power[0]);
     if (!IsVecEqualToOne(&power[0], 3))
     {
-        out << YAML::Key << "power";
-        out << YAML::Value << YAML::Flow << power;
+        out << YamlWrite::Key << "power";
+        out << YamlWrite::Value << YamlWrite::Flow << power;
     }
 
     if (!IsScalarEqualToOne(t->getSat()))
     {
-        out << YAML::Key << "sat" << YAML::Value << t->getSat();
+        out << YamlWrite::Key << "sat" << YamlWrite::Value << t->getSat();
     }
 
     if (t->getStyle() != CDL_TRANSFORM_DEFAULT)
     {
-        out << YAML::Key << "style" << YAML::Value << CDLStyleToString(t->getStyle());
+        out << YamlWrite::Key << "style" << YamlWrite::Value << CDLStyleToString(t->getStyle());
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // ColorSpaceTransform
 
-inline void load(const YAML::Node& node, ColorSpaceTransformRcPtr& t)
+inline void load(const YamlNode& node, ColorSpaceTransformRcPtr& t)
 {
     t = ColorSpaceTransform::Create();
 
@@ -831,26 +834,26 @@ inline void load(const YAML::Node& node, ColorSpaceTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstColorSpaceTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstColorSpaceTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("ColorSpaceTransform");
-    out << YAML::Flow << YAML::BeginMap;
-    out << YAML::Key << "src" << YAML::Value << t->getSrc();
-    out << YAML::Key << "dst" << YAML::Value << t->getDst();
+    out << YamlWrite::VerbatimTag("ColorSpaceTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "src" << YamlWrite::Value << t->getSrc();
+    out << YamlWrite::Key << "dst" << YamlWrite::Value << t->getDst();
     const bool bypass = t->getDataBypass();
     if (!bypass)
     {
         // NB: Will log a warning if read by a v1 library.
-        out << YAML::Key << "data_bypass" << YAML::Value << bypass;
+        out << YamlWrite::Key << "data_bypass" << YamlWrite::Value << bypass;
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // DisplayViewTransform
 
-inline void load(const YAML::Node& node, DisplayViewTransformRcPtr& t)
+inline void load(const YamlNode& node, DisplayViewTransformRcPtr& t)
 {
     t = DisplayViewTransform::Create();
 
@@ -903,31 +906,31 @@ inline void load(const YAML::Node& node, DisplayViewTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstDisplayViewTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstDisplayViewTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("DisplayViewTransform");
-    out << YAML::Flow << YAML::BeginMap;
-    out << YAML::Key << "src" << YAML::Value << t->getSrc();
-    out << YAML::Key << "display" << YAML::Value << t->getDisplay();
-    out << YAML::Key << "view" << YAML::Value << t->getView();
+    out << YamlWrite::VerbatimTag("DisplayViewTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "src" << YamlWrite::Value << t->getSrc();
+    out << YamlWrite::Key << "display" << YamlWrite::Value << t->getDisplay();
+    out << YamlWrite::Key << "view" << YamlWrite::Value << t->getView();
     const bool looksBypass = t->getLooksBypass();
     if (looksBypass)
     {
-        out << YAML::Key << "looks_bypass" << YAML::Value << looksBypass;
+        out << YamlWrite::Key << "looks_bypass" << YamlWrite::Value << looksBypass;
     }
     const bool dataBypass = t->getDataBypass();
     if (!dataBypass)
     {
-        out << YAML::Key << "data_bypass" << YAML::Value << dataBypass;
+        out << YamlWrite::Key << "data_bypass" << YamlWrite::Value << dataBypass;
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // ExponentTransform
 
-inline void load(const YAML::Node& node, ExponentTransformRcPtr& t)
+inline void load(const YamlNode& node, ExponentTransformRcPtr& t)
 {
     t = ExponentTransform::Create();
 
@@ -942,7 +945,7 @@ inline void load(const YAML::Node& node, ExponentTransformRcPtr& t)
         if (key == "value")
         {
             std::vector<double> val;
-            if (iter->second.Type() == YAML::NodeType::Sequence)
+            if (iter->second.Type() == YamlNodeType::Sequence)
             {
                 load(iter->second, val);
             }
@@ -989,10 +992,10 @@ inline void load(const YAML::Node& node, ExponentTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstExponentTransformRcPtr t, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstExponentTransformRcPtr t, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("ExponentTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("ExponentTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     if (majorVersion >= 2)
     {
@@ -1003,32 +1006,32 @@ inline void save(YAML::Emitter& out, ConstExponentTransformRcPtr t, unsigned int
     t->getValue(value);
     if (majorVersion >= 2 && value[0] == value[1] && value[0] == value[2] && value[3] == 1.)
     {
-        out << YAML::Key << "value" << YAML::Value << value[0];
+        out << YamlWrite::Key << "value" << YamlWrite::Value << value[0];
     }
     else
     {
         std::vector<double> v;
         v.assign(value, value + 4);
 
-        out << YAML::Key << "value";
-        out << YAML::Value << YAML::Flow << v;
+        out << YamlWrite::Key << "value";
+        out << YamlWrite::Value << YamlWrite::Flow << v;
     }
 
     auto style = t->getNegativeStyle();
     if (style != NEGATIVE_CLAMP)
     {
         // NB: Will log a warning if read by a v1 library.
-        out << YAML::Key << "style";
-        out << YAML::Value << YAML::Flow << NegativeStyleToString(style);
+        out << YamlWrite::Key << "style";
+        out << YamlWrite::Value << YamlWrite::Flow << NegativeStyleToString(style);
     }
     EmitBaseTransformKeyValues(out, t);
 
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // ExponentWithLinear
 
-inline void load(const YAML::Node& node, ExponentWithLinearTransformRcPtr& t)
+inline void load(const YamlNode& node, ExponentWithLinearTransformRcPtr& t)
 {
     t = ExponentWithLinearTransform::Create();
 
@@ -1055,7 +1058,7 @@ inline void load(const YAML::Node& node, ExponentWithLinearTransformRcPtr& t)
         if (key == "gamma")
         {
             std::vector<double> val;
-            if (iter->second.Type() == YAML::NodeType::Sequence)
+            if (iter->second.Type() == YamlNodeType::Sequence)
             {
                 load(iter->second, val);
             }
@@ -1083,7 +1086,7 @@ inline void load(const YAML::Node& node, ExponentWithLinearTransformRcPtr& t)
         else if(key == "offset")
         {
             std::vector<double> val;
-            if (iter->second.Type() == YAML::NodeType::Sequence)
+            if (iter->second.Type() == YamlNodeType::Sequence)
             {
                 load(iter->second, val);
             }
@@ -1152,10 +1155,10 @@ inline void load(const YAML::Node& node, ExponentWithLinearTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstExponentWithLinearTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstExponentWithLinearTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("ExponentWithLinearTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("ExponentWithLinearTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
@@ -1165,14 +1168,14 @@ inline void save(YAML::Emitter& out, ConstExponentWithLinearTransformRcPtr t)
     t->getGamma(gamma);
     if (gamma[0] == gamma[1] && gamma[0] == gamma[2] && gamma[3] == 1.)
     {
-        out << YAML::Key << "gamma" << YAML::Value << gamma[0];
+        out << YamlWrite::Key << "gamma" << YamlWrite::Value << gamma[0];
     }
     else
     {
         v.assign(gamma, gamma + 4);
 
-        out << YAML::Key << "gamma";
-        out << YAML::Value << YAML::Flow << v;
+        out << YamlWrite::Key << "gamma";
+        out << YamlWrite::Value << YamlWrite::Flow << v;
     }
 
     double offset[4];
@@ -1180,31 +1183,31 @@ inline void save(YAML::Emitter& out, ConstExponentWithLinearTransformRcPtr t)
     
     if (offset[0] == offset[1] && offset[0] == offset[2] && offset[3] == 0.)
     {
-        out << YAML::Key << "offset" << YAML::Value << offset[0];
+        out << YamlWrite::Key << "offset" << YamlWrite::Value << offset[0];
     }
     else
     {
         v.assign(offset, offset + 4);
 
-        out << YAML::Key << "offset";
-        out << YAML::Value << YAML::Flow << v;
+        out << YamlWrite::Key << "offset";
+        out << YamlWrite::Value << YamlWrite::Flow << v;
     }
 
     // Only save style if not default
     auto style = t->getNegativeStyle();
     if (style != NEGATIVE_LINEAR)
     {
-        out << YAML::Key << "style";
-        out << YAML::Value << YAML::Flow << NegativeStyleToString(style);
+        out << YamlWrite::Key << "style";
+        out << YamlWrite::Value << YamlWrite::Flow << NegativeStyleToString(style);
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // ExposureContrastTransform
 
-inline void load(const YAML::Node& node, ExposureContrastTransformRcPtr& t)
+inline void load(const YamlNode& node, ExposureContrastTransformRcPtr& t)
 {
     t = ExposureContrastTransform::Create();
 
@@ -1298,55 +1301,55 @@ inline void load(const YAML::Node& node, ExposureContrastTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstExposureContrastTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstExposureContrastTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("ExposureContrastTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("ExposureContrastTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << ExposureContrastStyleToString(t->getStyle());
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << ExposureContrastStyleToString(t->getStyle());
 
     // Do not save dynamic values.
 
     if (!t->isExposureDynamic())
     {
-        out << YAML::Key << "exposure" << YAML::Value << YAML::Flow << t->getExposure();
+        out << YamlWrite::Key << "exposure" << YamlWrite::Value << YamlWrite::Flow << t->getExposure();
     }
     if (!t->isContrastDynamic())
     {
-        out << YAML::Key << "contrast" << YAML::Value << YAML::Flow << t->getContrast();
+        out << YamlWrite::Key << "contrast" << YamlWrite::Value << YamlWrite::Flow << t->getContrast();
     }
     if (!t->isGammaDynamic())
     {
-        out << YAML::Key << "gamma" << YAML::Value << YAML::Flow << t->getGamma();
+        out << YamlWrite::Key << "gamma" << YamlWrite::Value << YamlWrite::Flow << t->getGamma();
     }
 
-    out << YAML::Key << "pivot";
-    out << YAML::Value << YAML::Flow << t->getPivot();
+    out << YamlWrite::Key << "pivot";
+    out << YamlWrite::Value << YamlWrite::Flow << t->getPivot();
 
     const auto les = t->getLogExposureStep();
     if (les != ExposureContrastOpData::LOGEXPOSURESTEP_DEFAULT)
     {
-        out << YAML::Key << "log_exposure_step";
-        out << YAML::Value << YAML::Flow << les;
+        out << YamlWrite::Key << "log_exposure_step";
+        out << YamlWrite::Value << YamlWrite::Flow << les;
     }
 
     const auto lmg = t->getLogMidGray();
     if (lmg != ExposureContrastOpData::LOGMIDGRAY_DEFAULT)
     {
-        out << YAML::Key << "log_midway_gray";
-        out << YAML::Value << YAML::Flow << lmg;
+        out << YamlWrite::Key << "log_midway_gray";
+        out << YamlWrite::Value << YamlWrite::Flow << lmg;
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // FileTransform
 
-inline void load(const YAML::Node& node, FileTransformRcPtr& t)
+inline void load(const YamlNode& node, FileTransformRcPtr& t)
 {
     t = FileTransform::Create();
 
@@ -1394,20 +1397,20 @@ inline void load(const YAML::Node& node, FileTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstFileTransformRcPtr t, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstFileTransformRcPtr t, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("FileTransform");
-    out << YAML::Flow << YAML::BeginMap;
-    out << YAML::Key << "src" << YAML::Value << t->getSrc();
+    out << YamlWrite::VerbatimTag("FileTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "src" << YamlWrite::Value << t->getSrc();
     const char * cccid = t->getCCCId();
     if (cccid && *cccid)
     {
-        out << YAML::Key << "cccid" << YAML::Value << t->getCCCId();
+        out << YamlWrite::Key << "cccid" << YamlWrite::Value << t->getCCCId();
     }
     if (t->getCDLStyle() != CDL_TRANSFORM_DEFAULT)
     {
         // NB: Will log a warning if read by a v1 library.
-        out << YAML::Key << "cdl_style" << YAML::Value << CDLStyleToString(t->getCDLStyle());
+        out << YamlWrite::Key << "cdl_style" << YamlWrite::Value << CDLStyleToString(t->getCDLStyle());
     }
     Interpolation interp = t->getInterpolation();
     if (majorVersion == 1 && interp == INTERP_DEFAULT)
@@ -1420,18 +1423,18 @@ inline void save(YAML::Emitter& out, ConstFileTransformRcPtr t, unsigned int maj
     }
     if (interp != INTERP_DEFAULT)
     {
-        out << YAML::Key << "interpolation";
-        out << YAML::Value;
+        out << YamlWrite::Key << "interpolation";
+        out << YamlWrite::Value;
         save(out, interp);
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // FixedFunctionTransform
 
-inline void load(const YAML::Node& node, FixedFunctionTransformRcPtr& t)
+inline void load(const YamlNode& node, FixedFunctionTransformRcPtr& t)
 {
     t = FixedFunctionTransform::Create(FIXED_FUNCTION_ACES_RED_MOD_03);
 
@@ -1495,15 +1498,15 @@ inline void load(const YAML::Node& node, FixedFunctionTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstFixedFunctionTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstFixedFunctionTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("FixedFunctionTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("FixedFunctionTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << FixedFunctionStyleToString(t->getStyle());
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << FixedFunctionStyleToString(t->getStyle());
 
     const FixedFunctionStyle styleID = t->getStyle();
     if (styleID == FIXED_FUNCTION_ACES_OUTPUT_TRANSFORM_20
@@ -1521,19 +1524,19 @@ inline void save(YAML::Emitter& out, ConstFixedFunctionTransformRcPtr t)
     {
         std::vector<double> params(numParams, 0.);
         t->getParams(&params[0]);
-        out << YAML::Key << "params";
-        out << YAML::Value << YAML::Flow << params;
+        out << YamlWrite::Key << "params";
+        out << YamlWrite::Value << YamlWrite::Flow << params;
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // GradingPrimaryTransform
 
-inline void load(const YAML::Node & parent, const YAML::Node & node, GradingRGBM & rgbm)
+inline void load(const YamlNode & parent, const YamlNode & node, GradingRGBM & rgbm)
 {
-    if (node.Type() == YAML::NodeType::Map)
+    if (node.Type() == YamlNodeType::Map)
     {
         bool rgbOK{ false };
         bool masterOK{ false };
@@ -1578,12 +1581,12 @@ inline void load(const YAML::Node & parent, const YAML::Node & node, GradingRGBM
     }
 }
 
-inline void loadPivot(const YAML::Node & parent, const YAML::Node & node,
+inline void loadPivot(const YamlNode & parent, const YamlNode & node,
                       double & val, bool & valLoaded,
                       double & blackVal, bool & blackValLoaded,
                       double & whiteVal, bool & whiteValLoaded)
 {
-    if (node.Type() == YAML::NodeType::Map)
+    if (node.Type() == YamlNodeType::Map)
     {
         for (Iterator iter = node.begin(); iter != node.end(); ++iter)
         {
@@ -1623,11 +1626,11 @@ inline void loadPivot(const YAML::Node & parent, const YAML::Node & node,
     }
 }
 
-inline void loadClamp(const YAML::Node & parent, const YAML::Node & node,
+inline void loadClamp(const YamlNode & parent, const YamlNode & node,
                       double & blackVal, bool & blackValLoaded,
                       double & whiteVal, bool & whiteValLoaded)
 {
-    if (node.Type() == YAML::NodeType::Map)
+    if (node.Type() == YamlNodeType::Map)
     {
         for (Iterator iter = node.begin(); iter != node.end(); ++iter)
         {
@@ -1662,7 +1665,7 @@ inline void loadClamp(const YAML::Node & parent, const YAML::Node & node,
     }
 }
 
-inline void load(const YAML::Node & node, GradingPrimaryTransformRcPtr & t)
+inline void load(const YamlNode & node, GradingPrimaryTransformRcPtr & t)
 {
     CheckDuplicates(node);
 
@@ -1819,7 +1822,7 @@ inline void load(const YAML::Node & node, GradingPrimaryTransformRcPtr & t)
     t->setValue(valuesSet);
 }
 
-inline void save(YAML::Emitter & out, const char * paramName, const GradingRGBM & rgbm,
+inline void save(YamlWrite::Emitter & out, const char * paramName, const GradingRGBM & rgbm,
                  const GradingRGBM & defaultRgbm)
 {
     if (rgbm != defaultRgbm)
@@ -1828,70 +1831,70 @@ inline void save(YAML::Emitter & out, const char * paramName, const GradingRGBM 
         vals[0] = rgbm.m_red;
         vals[1] = rgbm.m_green;
         vals[2] = rgbm.m_blue;
-        out << YAML::Key << paramName;
-        out << YAML::Value << YAML::Flow << YAML::BeginMap;
-        out << YAML::Key << "rgb" << YAML::Value << YAML::Flow << vals;
-        out << YAML::Key << "master";
-        out << YAML::Value << YAML::Flow << rgbm.m_master;
-        out << YAML::EndMap;
+        out << YamlWrite::Key << paramName;
+        out << YamlWrite::Value << YamlWrite::Flow << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "rgb" << YamlWrite::Value << YamlWrite::Flow << vals;
+        out << YamlWrite::Key << "master";
+        out << YamlWrite::Value << YamlWrite::Flow << rgbm.m_master;
+        out << YamlWrite::EndMap;
     }
 }
 
-inline void save(YAML::Emitter & out, const char * paramName, double val, double defaultVal)
+inline void save(YamlWrite::Emitter & out, const char * paramName, double val, double defaultVal)
 {
     if (val != defaultVal)
     {
-        out << YAML::Key << paramName << YAML::Value << YAML::Flow << val;
+        out << YamlWrite::Key << paramName << YamlWrite::Value << YamlWrite::Flow << val;
     }
 }
 
-inline void savePivot(YAML::Emitter & out, double val, bool saveContrast,
+inline void savePivot(YamlWrite::Emitter & out, double val, bool saveContrast,
                       double blackVal, double defaultBlackVal,
                       double whiteVal, double defaultWhiteVal)
 {
     if (saveContrast || blackVal != defaultBlackVal || whiteVal != defaultWhiteVal)
     {
-        out << YAML::Key << "pivot";
-        out << YAML::Value << YAML::Flow << YAML::BeginMap;
+        out << YamlWrite::Key << "pivot";
+        out << YamlWrite::Value << YamlWrite::Flow << YamlWrite::BeginMap;
         if (saveContrast)
         {
-            out << YAML::Key << "contrast" << YAML::Value << YAML::Flow << val;
+            out << YamlWrite::Key << "contrast" << YamlWrite::Value << YamlWrite::Flow << val;
         }
         save(out, "black", blackVal, defaultBlackVal);
         save(out, "white", whiteVal, defaultWhiteVal);
-        out << YAML::EndMap;
+        out << YamlWrite::EndMap;
     }
 }
 
-inline void saveClamp(YAML::Emitter & out,
+inline void saveClamp(YamlWrite::Emitter & out,
                       double blackVal, double defaultBlackVal,
                       double whiteVal, double defaultWhiteVal)
 {
     if (blackVal != defaultBlackVal || whiteVal != defaultWhiteVal)
     {
-        out << YAML::Key << "clamp";
-        out << YAML::Value << YAML::Flow << YAML::BeginMap;
+        out << YamlWrite::Key << "clamp";
+        out << YamlWrite::Value << YamlWrite::Flow << YamlWrite::BeginMap;
         save(out, "black", blackVal, defaultBlackVal);
         save(out, "white", whiteVal, defaultWhiteVal);
-        out << YAML::EndMap;
+        out << YamlWrite::EndMap;
     }
 }
 
-inline void save(YAML::Emitter & out, ConstGradingPrimaryTransformRcPtr t)
+inline void save(YamlWrite::Emitter & out, ConstGradingPrimaryTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("GradingPrimaryTransform");
+    out << YamlWrite::VerbatimTag("GradingPrimaryTransform");
 
     const auto style = t->getStyle();
     const auto & vals = t->getValue();
     const GradingPrimary defaultVals{ style };
 
-    if (vals == defaultVals) out << YAML::Flow;
-    out << YAML::BeginMap;
+    if (vals == defaultVals) out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << GradingStyleToString(style);
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << GradingStyleToString(style);
     switch (style)
     {
     case GRADING_LOG:
@@ -1934,14 +1937,14 @@ inline void save(YAML::Emitter & out, ConstGradingPrimaryTransformRcPtr t)
               vals.m_clampWhite, defaultVals.m_clampWhite);
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // GradingRGBCurveTransform
 
-inline void load(const YAML::Node & parent, const YAML::Node & node, GradingBSplineCurveRcPtr & sc)
+inline void load(const YamlNode & parent, const YamlNode & node, GradingBSplineCurveRcPtr & sc)
 {
-    if (node.Type() == YAML::NodeType::Map)
+    if (node.Type() == YamlNodeType::Map)
     {
         bool cpOK{ false };
         for (Iterator iter = node.begin(); iter != node.end(); ++iter)
@@ -2003,7 +2006,7 @@ inline void load(const YAML::Node & parent, const YAML::Node & node, GradingBSpl
     }
 }
 
-inline void load(const YAML::Node & node, GradingRGBCurveTransformRcPtr & t)
+inline void load(const YamlNode & node, GradingRGBCurveTransformRcPtr & t)
 {
     CheckDuplicates(node);
 
@@ -2082,7 +2085,7 @@ inline void load(const YAML::Node & node, GradingRGBCurveTransformRcPtr & t)
     t->setValue(curves);
 }
 
-inline void save(YAML::Emitter & out, const char * paramName, const ConstGradingBSplineCurveRcPtr & curve)
+inline void save(YamlWrite::Emitter & out, const char * paramName, const ConstGradingBSplineCurveRcPtr & curve)
 {
     std::vector<float> ctPts;
     const size_t numCtPts = curve->getNumControlPoints();
@@ -2092,9 +2095,9 @@ inline void save(YAML::Emitter & out, const char * paramName, const ConstGrading
         ctPts.push_back(pt.m_x);
         ctPts.push_back(pt.m_y);
     }
-    out << YAML::Key << paramName;
-    out << YAML::Flow << YAML::BeginMap;
-    out << YAML::Key << "control_points" << YAML::Value << ctPts;
+    out << YamlWrite::Key << paramName;
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "control_points" << YamlWrite::Value << ctPts;
     if (!curve->slopesAreDefault())
     {
         // (Number of slopes is always the same as control points.)
@@ -2105,12 +2108,12 @@ inline void save(YAML::Emitter & out, const char * paramName, const ConstGrading
             const float val = curve->getSlope(i);
             slopes.push_back(val);
         }
-        out << YAML::Key << "slopes" << YAML::Value << slopes;
+        out << YamlWrite::Key << "slopes" << YamlWrite::Value << slopes;
     }
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
-inline void save(YAML::Emitter & out, ConstGradingRGBCurveTransformRcPtr t)
+inline void save(YamlWrite::Emitter & out, ConstGradingRGBCurveTransformRcPtr t)
 {
     const auto & vals = t->getValue();
     auto & defCurve = t->getStyle() == GRADING_LIN ? GradingRGBCurveImpl::DefaultLin :
@@ -2126,20 +2129,20 @@ inline void save(YAML::Emitter & out, ConstGradingRGBCurveTransformRcPtr t)
         }
     }
 
-    out << YAML::VerbatimTag("GradingRGBCurveTransform");
-    if (!useLineBreaks) out << YAML::Flow;
-    out << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("GradingRGBCurveTransform");
+    if (!useLineBreaks) out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
     const auto style = t->getStyle();
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << GradingStyleToString(style);
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << GradingStyleToString(style);
 
     if (t->getBypassLinToLog())
     {
-        out << YAML::Key << "lintolog_bypass";
-        out << YAML::Value << YAML::Flow << true;
+        out << YamlWrite::Key << "lintolog_bypass";
+        out << YamlWrite::Value << YamlWrite::Flow << true;
     }
 
     static const std::vector<const char *> curveNames = { "red", "green", "blue", "master" };
@@ -2153,12 +2156,12 @@ inline void save(YAML::Emitter & out, ConstGradingRGBCurveTransformRcPtr t)
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // GradingHueCurveTransform
 
-inline void load(const YAML::Node & node, GradingHueCurveTransformRcPtr & t)
+inline void load(const YamlNode & node, GradingHueCurveTransformRcPtr & t)
 {
     CheckDuplicates(node);
 
@@ -2271,7 +2274,7 @@ inline void load(const YAML::Node & node, GradingHueCurveTransformRcPtr & t)
     t->setValue(curves);
 }
 
-inline void save(YAML::Emitter & out, ConstGradingHueCurveTransformRcPtr t)
+inline void save(YamlWrite::Emitter & out, ConstGradingHueCurveTransformRcPtr t)
 {
     const auto & vals = t->getValue();
     auto & defCurves = t->getStyle() == GRADING_LIN ? GradingHueCurveImpl::DefaultCurvesLin :
@@ -2287,20 +2290,20 @@ inline void save(YAML::Emitter & out, ConstGradingHueCurveTransformRcPtr t)
         }
     }
 
-    out << YAML::VerbatimTag("GradingHueCurveTransform");
-    if (!useLineBreaks) out << YAML::Flow;
-    out << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("GradingHueCurveTransform");
+    if (!useLineBreaks) out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
     const auto style = t->getStyle();
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << GradingStyleToString(style);
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << GradingStyleToString(style);
 
     if (t->getRGBToHSY() == HSY_TRANSFORM_NONE)
     {
-        out << YAML::Key << "hsy_transform";
-        out << YAML::Value << YAML::Flow << "none";
+        out << YamlWrite::Key << "hsy_transform";
+        out << YamlWrite::Value << YamlWrite::Flow << "none";
     }
 
     static const std::vector<const char *> curveNames = { "hue_hue", "hue_sat", "hue_lum",
@@ -2315,15 +2318,15 @@ inline void save(YAML::Emitter & out, ConstGradingHueCurveTransformRcPtr t)
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // GradingToneTransform
 
-inline void load(const YAML::Node & parent, const YAML::Node & node, GradingRGBMSW & rgbm,
+inline void load(const YamlNode & parent, const YamlNode & node, GradingRGBMSW & rgbm,
                  bool center, bool pivot)
 {
-    if (node.Type() == YAML::NodeType::Map)
+    if (node.Type() == YamlNodeType::Map)
     {
         bool rgbOK{ false };
         bool masterOK{ false };
@@ -2384,7 +2387,7 @@ inline void load(const YAML::Node & parent, const YAML::Node & node, GradingRGBM
     }
 }
 
-inline void load(const YAML::Node & node, GradingToneTransformRcPtr & t)
+inline void load(const YamlNode & node, GradingToneTransformRcPtr & t)
 {
     CheckDuplicates(node);
 
@@ -2468,39 +2471,39 @@ inline void load(const YAML::Node & node, GradingToneTransformRcPtr & t)
     t->setValue(values);
 }
 
-inline void save(YAML::Emitter & out, const char * paramName, const GradingRGBMSW & rgbm,
+inline void save(YamlWrite::Emitter & out, const char * paramName, const GradingRGBMSW & rgbm,
                  const GradingRGBMSW & defaultRgbm, bool center, bool pivot)
 {
     if (rgbm != defaultRgbm)
     {
         std::vector<double> vals{ rgbm.m_red, rgbm.m_green, rgbm.m_blue };
-        out << YAML::Key << paramName;
-        out << YAML::Value << YAML::Flow << YAML::BeginMap;
-        out << YAML::Key << "rgb" << YAML::Value << YAML::Flow << vals;
-        out << YAML::Key << "master" << YAML::Value << YAML::Flow << rgbm.m_master;
-        out << YAML::Key << (center ? "center" : "start") << YAML::Value << YAML::Flow 
+        out << YamlWrite::Key << paramName;
+        out << YamlWrite::Value << YamlWrite::Flow << YamlWrite::BeginMap;
+        out << YamlWrite::Key << "rgb" << YamlWrite::Value << YamlWrite::Flow << vals;
+        out << YamlWrite::Key << "master" << YamlWrite::Value << YamlWrite::Flow << rgbm.m_master;
+        out << YamlWrite::Key << (center ? "center" : "start") << YamlWrite::Value << YamlWrite::Flow 
             << rgbm.m_start;
-        out << YAML::Key << (pivot ? "pivot" : "width") << YAML::Value << YAML::Flow
+        out << YamlWrite::Key << (pivot ? "pivot" : "width") << YamlWrite::Value << YamlWrite::Flow
             << rgbm.m_width;
-        out << YAML::EndMap;
+        out << YamlWrite::EndMap;
     }
 }
 
-inline void save(YAML::Emitter & out, ConstGradingToneTransformRcPtr t)
+inline void save(YamlWrite::Emitter & out, ConstGradingToneTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("GradingToneTransform");
+    out << YamlWrite::VerbatimTag("GradingToneTransform");
 
     const auto style = t->getStyle();
     const auto & vals = t->getValue();
     const GradingTone defaultVals(style);
 
-    if (vals == defaultVals) out << YAML::Flow;
-    out << YAML::BeginMap;
+    if (vals == defaultVals) out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
-    out << YAML::Key << "style";
-    out << YAML::Value << YAML::Flow << GradingStyleToString(style);
+    out << YamlWrite::Key << "style";
+    out << YamlWrite::Value << YamlWrite::Flow << GradingStyleToString(style);
     save(out, "blacks", vals.m_blacks, defaultVals.m_blacks, false, false);
     save(out, "shadows", vals.m_shadows, defaultVals.m_shadows, false, true);
     save(out, "midtones", vals.m_midtones, defaultVals.m_midtones, true, false);
@@ -2509,15 +2512,15 @@ inline void save(YAML::Emitter & out, ConstGradingToneTransformRcPtr t)
     save(out, "s_contrast", vals.m_scontrast, defaultVals.m_scontrast);
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // GroupTransform
 
-void load(const YAML::Node& node, TransformRcPtr& t);
-void save(YAML::Emitter& out, ConstTransformRcPtr t, unsigned int majorVersion);
+void load(const YamlNode& node, TransformRcPtr& t);
+void save(YamlWrite::Emitter& out, ConstTransformRcPtr t, unsigned int majorVersion);
 
-inline void load(const YAML::Node& node, GroupTransformRcPtr& t)
+inline void load(const YamlNode& node, GroupTransformRcPtr& t)
 {
     t = GroupTransform::Create();
 
@@ -2533,7 +2536,7 @@ inline void load(const YAML::Node& node, GroupTransformRcPtr& t)
         {
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 TransformRcPtr childTransform;
                 load(val, childTransform);
@@ -2568,10 +2571,10 @@ inline void load(const YAML::Node& node, GroupTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstGroupTransformRcPtr t, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstGroupTransformRcPtr t, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("GroupTransform");
-    out << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("GroupTransform");
+    out << YamlWrite::BeginMap;
 
     if (majorVersion >= 2)
     {
@@ -2579,22 +2582,22 @@ inline void save(YAML::Emitter& out, ConstGroupTransformRcPtr t, unsigned int ma
     }
     EmitBaseTransformKeyValues(out, t);
 
-    out << YAML::Key << "children";
-    out << YAML::Value;
+    out << YamlWrite::Key << "children";
+    out << YamlWrite::Value;
 
-    out << YAML::BeginSeq;
+    out << YamlWrite::BeginSeq;
     for(int i = 0; i < t->getNumTransforms(); ++i)
     {
         save(out, t->getTransform(i), majorVersion);
     }
-    out << YAML::EndSeq;
+    out << YamlWrite::EndSeq;
 
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // LogAffineTransform
 
-inline void loadLogParam(const YAML::Node & node,
+inline void loadLogParam(const YamlNode & node,
                          double(&param)[3],
                          const std::string & paramName)
 {
@@ -2624,7 +2627,7 @@ inline void loadLogParam(const YAML::Node & node,
     }
 }
 
-inline void load(const YAML::Node& node, LogAffineTransformRcPtr& t)
+inline void load(const YamlNode& node, LogAffineTransformRcPtr& t)
 {
     t = LogAffineTransform::Create();
 
@@ -2697,7 +2700,7 @@ inline void load(const YAML::Node& node, LogAffineTransformRcPtr& t)
     t->setLogSideOffsetValue(logOffset);
 }
 
-inline void saveLogParam(YAML::Emitter& out, const double(&param)[3],
+inline void saveLogParam(YamlWrite::Emitter& out, const double(&param)[3],
                          double defaultVal, const char * paramName)
 {
     // (See test in Config_test.cpp that verifies double precision is preserved.)
@@ -2707,21 +2710,21 @@ inline void saveLogParam(YAML::Emitter& out, const double(&param)[3],
         // otherwise default params are not saved.
         if (param[0] != defaultVal)
         {
-            out << YAML::Key << paramName << YAML::Value << param[0];
+            out << YamlWrite::Key << paramName << YamlWrite::Value << param[0];
         }
     }
     else
     {
         std::vector<double> vals;
         vals.assign(param, param + 3);
-        out << YAML::Key << paramName << YAML::Value << vals;
+        out << YamlWrite::Key << paramName << YamlWrite::Value << vals;
     }
 }
 
-inline void save(YAML::Emitter& out, ConstLogAffineTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstLogAffineTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("LogAffineTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("LogAffineTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
@@ -2737,7 +2740,7 @@ inline void save(YAML::Emitter& out, ConstLogAffineTransformRcPtr t)
     const double baseVal = t->getBase();
     if (baseVal != 2.0)
     {
-        out << YAML::Key << "base" << YAML::Value << baseVal;
+        out << YamlWrite::Key << "base" << YamlWrite::Value << baseVal;
     }
     saveLogParam(out, logSlope, 1.0, "log_side_slope");
     saveLogParam(out, logOffset, 0.0, "log_side_offset");
@@ -2745,12 +2748,12 @@ inline void save(YAML::Emitter& out, ConstLogAffineTransformRcPtr t)
     saveLogParam(out, linOffset, 0.0, "lin_side_offset");
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // LogCameraTransform
 
-inline void load(const YAML::Node & node, LogCameraTransformRcPtr & t)
+inline void load(const YamlNode & node, LogCameraTransformRcPtr & t)
 {
     double linBreak[3] = { 0.0, 0.0, 0.0 };
     t = LogCameraTransform::Create(linBreak);
@@ -2846,10 +2849,10 @@ inline void load(const YAML::Node & node, LogCameraTransformRcPtr & t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstLogCameraTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstLogCameraTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("LogCameraTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("LogCameraTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
@@ -2869,7 +2872,7 @@ inline void save(YAML::Emitter& out, ConstLogCameraTransformRcPtr t)
     const double baseVal = t->getBase();
     if (baseVal != 2.0)
     {
-        out << YAML::Key << "base" << YAML::Value << baseVal;
+        out << YamlWrite::Key << "base" << YamlWrite::Value << baseVal;
     }
     saveLogParam(out, logSlope, 1.0, "log_side_slope");
     saveLogParam(out, logOffset, 0.0, "log_side_offset");
@@ -2882,12 +2885,12 @@ inline void save(YAML::Emitter& out, ConstLogCameraTransformRcPtr t)
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // LogTransform
 
-inline void load(const YAML::Node& node, LogTransformRcPtr& t)
+inline void load(const YamlNode& node, LogTransformRcPtr& t)
 {
     t = LogTransform::Create();
 
@@ -2935,10 +2938,10 @@ inline void load(const YAML::Node& node, LogTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstLogTransformRcPtr t, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstLogTransformRcPtr t, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("LogTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("LogTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     if (majorVersion >= 2)
     {
@@ -2948,15 +2951,15 @@ inline void save(YAML::Emitter& out, ConstLogTransformRcPtr t, unsigned int majo
     const double baseVal = t->getBase();
     if (baseVal != 2.0 || majorVersion < 2)
     {
-        out << YAML::Key << "base" << YAML::Value << baseVal;
+        out << YamlWrite::Key << "base" << YamlWrite::Value << baseVal;
     }
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // LookTransform
 
-inline void load(const YAML::Node& node, LookTransformRcPtr& t)
+inline void load(const YamlNode& node, LookTransformRcPtr& t)
 {
     t = LookTransform::Create();
 
@@ -2999,20 +3002,20 @@ inline void load(const YAML::Node& node, LookTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstLookTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstLookTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("LookTransform");
-    out << YAML::Flow << YAML::BeginMap;
-    out << YAML::Key << "src" << YAML::Value << t->getSrc();
-    out << YAML::Key << "dst" << YAML::Value << t->getDst();
-    out << YAML::Key << "looks" << YAML::Value << t->getLooks();
+    out << YamlWrite::VerbatimTag("LookTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "src" << YamlWrite::Value << t->getSrc();
+    out << YamlWrite::Key << "dst" << YamlWrite::Value << t->getDst();
+    out << YamlWrite::Key << "looks" << YamlWrite::Value << t->getLooks();
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // MatrixTransform
 
-inline void load(const YAML::Node& node, MatrixTransformRcPtr& t)
+inline void load(const YamlNode& node, MatrixTransformRcPtr& t)
 {
     t = MatrixTransform::Create();
 
@@ -3069,10 +3072,10 @@ inline void load(const YAML::Node& node, MatrixTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstMatrixTransformRcPtr t, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstMatrixTransformRcPtr t, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("MatrixTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("MatrixTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     if (majorVersion >= 2)
     {
@@ -3083,25 +3086,25 @@ inline void save(YAML::Emitter& out, ConstMatrixTransformRcPtr t, unsigned int m
     t->getMatrix(&matrix[0]);
     if(!IsM44Identity(&matrix[0]))
     {
-        out << YAML::Key << "matrix";
-        out << YAML::Value << YAML::Flow << matrix;
+        out << YamlWrite::Key << "matrix";
+        out << YamlWrite::Value << YamlWrite::Flow << matrix;
     }
 
     std::vector<double> offset(4, 0.0);
     t->getOffset(&offset[0]);
     if(!IsVecEqualToZero(&offset[0],4))
     {
-        out << YAML::Key << "offset";
-        out << YAML::Value << YAML::Flow << offset;
+        out << YamlWrite::Key << "offset";
+        out << YamlWrite::Value << YamlWrite::Flow << offset;
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // RangeTransform
 
-inline void load(const YAML::Node& node, RangeTransformRcPtr& t)
+inline void load(const YamlNode& node, RangeTransformRcPtr& t)
 {
     t = RangeTransform::Create();
 
@@ -3163,52 +3166,52 @@ inline void load(const YAML::Node& node, RangeTransformRcPtr& t)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstRangeTransformRcPtr t)
+inline void save(YamlWrite::Emitter& out, ConstRangeTransformRcPtr t)
 {
-    out << YAML::VerbatimTag("RangeTransform");
-    out << YAML::Flow << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("RangeTransform");
+    out << YamlWrite::Flow << YamlWrite::BeginMap;
 
     EmitTransformName(out, t->getFormatMetadata());
 
     if(t->hasMinInValue())
     {
-        out << YAML::Key << "min_in_value";
-        out << YAML::Value << YAML::Flow << t->getMinInValue();
+        out << YamlWrite::Key << "min_in_value";
+        out << YamlWrite::Value << YamlWrite::Flow << t->getMinInValue();
     }
 
     if(t->hasMaxInValue())
     {
-        out << YAML::Key << "max_in_value";
-        out << YAML::Value << YAML::Flow << t->getMaxInValue();
+        out << YamlWrite::Key << "max_in_value";
+        out << YamlWrite::Value << YamlWrite::Flow << t->getMaxInValue();
     }
 
     if(t->hasMinOutValue())
     {
-        out << YAML::Key << "min_out_value";
-        out << YAML::Value << YAML::Flow << t->getMinOutValue();
+        out << YamlWrite::Key << "min_out_value";
+        out << YamlWrite::Value << YamlWrite::Flow << t->getMinOutValue();
     }
 
     if(t->hasMaxOutValue())
     {
-        out << YAML::Key << "max_out_value";
-        out << YAML::Value << YAML::Flow << t->getMaxOutValue();
+        out << YamlWrite::Key << "max_out_value";
+        out << YamlWrite::Value << YamlWrite::Flow << t->getMaxOutValue();
     }
 
     if(t->getStyle()!=RANGE_CLAMP)
     {
-        out << YAML::Key << "style";
-        out << YAML::Value << YAML::Flow << RangeStyleToString(t->getStyle());
+        out << YamlWrite::Key << "style";
+        out << YamlWrite::Value << YamlWrite::Flow << RangeStyleToString(t->getStyle());
     }
 
     EmitBaseTransformKeyValues(out, t);
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // Transform
 
-void load(const YAML::Node& node, TransformRcPtr& t)
+void load(const YamlNode& node, TransformRcPtr& t)
 {
-    if(node.Type() != YAML::NodeType::Map)
+    if(node.Type() != YamlNodeType::Map)
     {
         std::ostringstream os;
         os << "Unsupported Transform type encountered: (" 
@@ -3363,7 +3366,7 @@ void load(const YAML::Node& node, TransformRcPtr& t)
     }
 }
 
-void save(YAML::Emitter& out, ConstTransformRcPtr t, unsigned int majorVersion)
+void save(YamlWrite::Emitter& out, ConstTransformRcPtr t, unsigned int majorVersion)
 {
     if(ConstAllocationTransformRcPtr Allocation_tran = \
         DynamicPtrCast<const AllocationTransform>(t))
@@ -3434,12 +3437,12 @@ void save(YAML::Emitter& out, ConstTransformRcPtr t, unsigned int majorVersion)
 
 // ColorSpace
 
-inline void load(const YAML::Node& node, ColorSpaceRcPtr& cs, unsigned int majorVersion)
+inline void load(const YamlNode& node, ColorSpaceRcPtr& cs, unsigned int majorVersion)
 {
     if(node.Tag() != "ColorSpace")
         return; // not a !<ColorSpace> tag
 
-    if(node.Type() != YAML::NodeType::Map)
+    if(node.Type() != YamlNodeType::Map)
     {
         std::ostringstream os;
         os << "The '!<ColorSpace>' content needs to be a map.";
@@ -3586,41 +3589,41 @@ inline void load(const YAML::Node& node, ColorSpaceRcPtr& cs, unsigned int major
 
 
 
-inline void save(YAML::Emitter& out, ConstColorSpaceRcPtr cs, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstColorSpaceRcPtr cs, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("ColorSpace");
-    out << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("ColorSpace");
+    out << YamlWrite::BeginMap;
 
-    out << YAML::Key << "name" << YAML::Value << cs->getName();
+    out << YamlWrite::Key << "name" << YamlWrite::Value << cs->getName();
     const size_t numAliases = cs->getNumAliases();
     if (majorVersion >= 2 && numAliases)
     {
-        out << YAML::Key << "aliases";
+        out << YamlWrite::Key << "aliases";
         StringUtils::StringVec aliases;
         for (size_t aidx = 0; aidx < numAliases; ++aidx)
         {
             aliases.push_back(cs->getAlias(aidx));
         }
-        out << YAML::Flow << YAML::Value << aliases;
+        out << YamlWrite::Flow << YamlWrite::Value << aliases;
     }
 
     const std::string interopID{ cs->getInteropID() };
     if (!interopID.empty())
     {
-        out << YAML::Key << "interop_id";
-        out << YAML::Value << interopID;
+        out << YamlWrite::Key << "interop_id";
+        out << YamlWrite::Value << interopID;
     }
 
-    out << YAML::Key << "family" << YAML::Value << cs->getFamily();
+    out << YamlWrite::Key << "family" << YamlWrite::Value << cs->getFamily();
 
-    out << YAML::Key << "equalitygroup" << YAML::Value << cs->getEqualityGroup();
+    out << YamlWrite::Key << "equalitygroup" << YamlWrite::Value << cs->getEqualityGroup();
 
-    out << YAML::Key << "bitdepth" << YAML::Value;
+    out << YamlWrite::Key << "bitdepth" << YamlWrite::Value;
     save(out, cs->getBitDepth());
     
     saveDescription(out, cs->getDescription());
 
-    out << YAML::Key << "isdata" << YAML::Value << cs->isData();
+    out << YamlWrite::Key << "isdata" << YamlWrite::Value << cs->isData();
 
     if(cs->getNumCategories() > 0)
     {
@@ -3629,55 +3632,55 @@ inline void save(YAML::Emitter& out, ConstColorSpaceRcPtr cs, unsigned int major
         {
             categories.push_back(cs->getCategory(idx));
         }
-        out << YAML::Key << "categories";
-        out << YAML::Flow << YAML::Value << categories;
+        out << YamlWrite::Key << "categories";
+        out << YamlWrite::Flow << YamlWrite::Value << categories;
     }
 
     const std::string is{ cs->getEncoding() };
     if (!is.empty())
     {
-        out << YAML::Key << "encoding";
-        out << YAML::Value << is;
+        out << YamlWrite::Key << "encoding";
+        out << YamlWrite::Value << is;
     }
 
     saveInterchangeAttributes(out, cs->getInterchangeAttributes());
 
-    out << YAML::Key << "allocation" << YAML::Value;
+    out << YamlWrite::Key << "allocation" << YamlWrite::Value;
     save(out, cs->getAllocation());
     if(cs->getAllocationNumVars() > 0)
     {
         std::vector<float> allocationvars(cs->getAllocationNumVars());
         cs->getAllocationVars(&allocationvars[0]);
-        out << YAML::Key << "allocationvars";
-        out << YAML::Flow << YAML::Value << allocationvars;
+        out << YamlWrite::Key << "allocationvars";
+        out << YamlWrite::Flow << YamlWrite::Value << allocationvars;
     }
 
     const auto isDisplay = (cs->getReferenceSpaceType() == REFERENCE_SPACE_DISPLAY);
     ConstTransformRcPtr toref = cs->getTransform(COLORSPACE_DIR_TO_REFERENCE);
     if(toref)
     {
-        out << YAML::Key << (isDisplay ? "to_display_reference" :
+        out << YamlWrite::Key << (isDisplay ? "to_display_reference" :
                                          (majorVersion < 2) ? "to_reference" :
-                                                              "to_scene_reference") << YAML::Value;
+                                                              "to_scene_reference") << YamlWrite::Value;
         save(out, toref, majorVersion);
     }
 
     ConstTransformRcPtr fromref = cs->getTransform(COLORSPACE_DIR_FROM_REFERENCE);
     if(fromref)
     {
-        out << YAML::Key << (isDisplay ? "from_display_reference" :
+        out << YamlWrite::Key << (isDisplay ? "from_display_reference" :
                                          (majorVersion < 2) ? "from_reference" :
-                                                              "from_scene_reference") << YAML::Value;
+                                                              "from_scene_reference") << YamlWrite::Value;
         save(out, fromref, majorVersion);
     }
 
-    out << YAML::EndMap;
-    out << YAML::Newline;
+    out << YamlWrite::EndMap;
+    out << YamlWrite::Newline;
 }
 
 // Look
 
-inline void load(const YAML::Node& node, LookRcPtr& look)
+inline void load(const YamlNode& node, LookRcPtr& look)
 {
     if(node.Tag() != "Look")
         return;
@@ -3731,38 +3734,38 @@ inline void load(const YAML::Node& node, LookRcPtr& look)
     }
 }
 
-inline void save(YAML::Emitter& out, ConstLookRcPtr look, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter& out, ConstLookRcPtr look, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("Look");
-    out << YAML::BeginMap;
-    out << YAML::Key << "name" << YAML::Value << look->getName();
-    out << YAML::Key << "process_space" << YAML::Value << look->getProcessSpace();
+    out << YamlWrite::VerbatimTag("Look");
+    out << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "name" << YamlWrite::Value << look->getName();
+    out << YamlWrite::Key << "process_space" << YamlWrite::Value << look->getProcessSpace();
     saveDescription(out, look->getDescription());
     saveInterchangeAttributes(out, look->getInterchangeAttributes());
 
     if(look->getTransform())
     {
-        out << YAML::Key << "transform";
-        out << YAML::Value;
+        out << YamlWrite::Key << "transform";
+        out << YamlWrite::Value;
         save(out, look->getTransform(), majorVersion);
     }
 
     if(look->getInverseTransform())
     {
-        out << YAML::Key << "inverse_transform";
-        out << YAML::Value;
+        out << YamlWrite::Key << "inverse_transform";
+        out << YamlWrite::Value;
         save(out, look->getInverseTransform(), majorVersion);
     }
 
-    out << YAML::EndMap;
-    out << YAML::Newline;
+    out << YamlWrite::EndMap;
+    out << YamlWrite::Newline;
 }
 
 // View transform
 
-inline ReferenceSpaceType peekViewTransformReferenceSpace(const YAML::Node & node)
+inline ReferenceSpaceType peekViewTransformReferenceSpace(const YamlNode & node)
 {
-    if (node.Type() != YAML::NodeType::Map)
+    if (node.Type() != YamlNodeType::Map)
     {
         throwError(node, "The '!<ViewTransform>' content needs to be a map.");
     }
@@ -3807,14 +3810,14 @@ inline ReferenceSpaceType peekViewTransformReferenceSpace(const YAML::Node & nod
     return isDisplay ? REFERENCE_SPACE_DISPLAY : REFERENCE_SPACE_SCENE;
 }
 
-inline void load(const YAML::Node & node, ViewTransformRcPtr & vt)
+inline void load(const YamlNode & node, ViewTransformRcPtr & vt)
 {
     if (node.Tag() != "ViewTransform")
     {
         return; // not a !<ViewTransform> tag
     }
 
-    if (node.Type() != YAML::NodeType::Map)
+    if (node.Type() != YamlNodeType::Map)
     {
         std::ostringstream os;
         os << "The '!<ViewTransform>' content needs to be a map.";
@@ -3891,16 +3894,16 @@ inline void load(const YAML::Node & node, ViewTransformRcPtr & vt)
     }
 }
 
-inline void save(YAML::Emitter & out, ConstViewTransformRcPtr & vt, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter & out, ConstViewTransformRcPtr & vt, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("ViewTransform");
-    out << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("ViewTransform");
+    out << YamlWrite::BeginMap;
 
-    out << YAML::Key << "name" << YAML::Value << vt->getName();
+    out << YamlWrite::Key << "name" << YamlWrite::Value << vt->getName();
     const char * family = vt->getFamily();
     if (family && *family)
     {
-        out << YAML::Key << "family" << YAML::Value << family;
+        out << YamlWrite::Key << "family" << YamlWrite::Value << family;
     }
     saveDescription(out, vt->getDescription());
     saveInterchangeAttributes(out, vt->getInterchangeAttributes());
@@ -3912,39 +3915,39 @@ inline void save(YAML::Emitter & out, ConstViewTransformRcPtr & vt, unsigned int
         {
             categories.push_back(vt->getCategory(idx));
         }
-        out << YAML::Key << "categories";
-        out << YAML::Flow << YAML::Value << categories;
+        out << YamlWrite::Key << "categories";
+        out << YamlWrite::Flow << YamlWrite::Value << categories;
     }
 
     const auto isDisplay = (vt->getReferenceSpaceType() == REFERENCE_SPACE_DISPLAY);
     ConstTransformRcPtr toref = vt->getTransform(VIEWTRANSFORM_DIR_TO_REFERENCE);
     if (toref)
     {
-        out << YAML::Key << (isDisplay ? "to_display_reference" : "to_scene_reference") << YAML::Value;
+        out << YamlWrite::Key << (isDisplay ? "to_display_reference" : "to_scene_reference") << YamlWrite::Value;
         save(out, toref, majorVersion);
     }
 
     ConstTransformRcPtr fromref = vt->getTransform(VIEWTRANSFORM_DIR_FROM_REFERENCE);
     if (fromref)
     {
-        out << YAML::Key << (isDisplay ? "from_display_reference" : "from_scene_reference") << YAML::Value;
+        out << YamlWrite::Key << (isDisplay ? "from_display_reference" : "from_scene_reference") << YamlWrite::Value;
         save(out, fromref, majorVersion);
     }
 
-    out << YAML::EndMap;
-    out << YAML::Newline;
+    out << YamlWrite::EndMap;
+    out << YamlWrite::Newline;
 }
 
 // NamedTransform
 
-inline void load(const YAML::Node & node, NamedTransformRcPtr & nt)
+inline void load(const YamlNode & node, NamedTransformRcPtr & nt)
 {
     if (node.Tag() != "NamedTransform")
     {
         return; // not a !<NamedTransform> tag
     }
 
-    if (node.Type() != YAML::NodeType::Map)
+    if (node.Type() != YamlNodeType::Map)
     {
         std::ostringstream os;
         os << "The '!<NamedTransform>' content needs to be a map.";
@@ -4018,23 +4021,23 @@ inline void load(const YAML::Node & node, NamedTransformRcPtr & nt)
     }
 }
 
-inline void save(YAML::Emitter & out, ConstNamedTransformRcPtr & nt, unsigned int majorVersion)
+inline void save(YamlWrite::Emitter & out, ConstNamedTransformRcPtr & nt, unsigned int majorVersion)
 {
-    out << YAML::VerbatimTag("NamedTransform");
-    out << YAML::BeginMap;
+    out << YamlWrite::VerbatimTag("NamedTransform");
+    out << YamlWrite::BeginMap;
 
-    out << YAML::Key << "name" << YAML::Value << nt->getName();
+    out << YamlWrite::Key << "name" << YamlWrite::Value << nt->getName();
 
     const size_t numAliases = nt->getNumAliases();
     if (majorVersion >= 2 && numAliases)
     {
-        out << YAML::Key << "aliases";
+        out << YamlWrite::Key << "aliases";
         StringUtils::StringVec aliases;
         for (size_t aidx = 0; aidx < numAliases; ++aidx)
         {
             aliases.push_back(nt->getAlias(aidx));
         }
-        out << YAML::Flow << YAML::Value << aliases;
+        out << YamlWrite::Flow << YamlWrite::Value << aliases;
     }
 
     saveDescription(out, nt->getDescription());
@@ -4042,7 +4045,7 @@ inline void save(YAML::Emitter & out, ConstNamedTransformRcPtr & nt, unsigned in
     const char * family = nt->getFamily();
     if (family && *family)
     {
-        out << YAML::Key << "family" << YAML::Value << family;
+        out << YamlWrite::Key << "family" << YamlWrite::Value << family;
     }
 
     if (nt->getNumCategories() > 0)
@@ -4052,37 +4055,37 @@ inline void save(YAML::Emitter & out, ConstNamedTransformRcPtr & nt, unsigned in
         {
             categories.push_back(nt->getCategory(idx));
         }
-        out << YAML::Key << "categories";
-        out << YAML::Flow << YAML::Value << categories;
+        out << YamlWrite::Key << "categories";
+        out << YamlWrite::Flow << YamlWrite::Value << categories;
     }
 
     const char * encoding = nt->getEncoding();
     if (encoding && *encoding)
     {
-        out << YAML::Key << "encoding" << YAML::Value << encoding;
+        out << YamlWrite::Key << "encoding" << YamlWrite::Value << encoding;
     }
 
     ConstTransformRcPtr transform = nt->getTransform(TRANSFORM_DIR_FORWARD);
     if (transform)
     {
-        out << YAML::Key << "transform" << YAML::Value;
+        out << YamlWrite::Key << "transform" << YamlWrite::Value;
         save(out, transform, majorVersion);
     }
 
     transform = nt->getTransform(TRANSFORM_DIR_INVERSE);
     if (transform)
     {
-        out << YAML::Key << "inverse_transform" << YAML::Value;
+        out << YamlWrite::Key << "inverse_transform" << YamlWrite::Value;
         save(out, transform, majorVersion);
     }
 
-    out << YAML::EndMap;
-    out << YAML::Newline;
+    out << YamlWrite::EndMap;
+    out << YamlWrite::Newline;
 }
 
 // File rules
 
-inline void load(const YAML::Node & node, FileRulesRcPtr & fr, bool & defaultRuleFound)
+inline void load(const YamlNode & node, FileRulesRcPtr & fr, bool & defaultRuleFound)
 {
     if (node.Tag() != "Rule")
         return;
@@ -4216,52 +4219,52 @@ inline void load(const YAML::Node & node, FileRulesRcPtr & fr, bool & defaultRul
     }
 }
 
-inline void save(YAML::Emitter & out, ConstFileRulesRcPtr & fr, size_t position)
+inline void save(YamlWrite::Emitter & out, ConstFileRulesRcPtr & fr, size_t position)
 {
-    out << YAML::VerbatimTag("Rule");
-    out << YAML::Flow;
-    out << YAML::BeginMap;
-    out << YAML::Key << FileRuleUtils::Name << YAML::Value << fr->getName(position);
+    out << YamlWrite::VerbatimTag("Rule");
+    out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
+    out << YamlWrite::Key << FileRuleUtils::Name << YamlWrite::Value << fr->getName(position);
     const char * cs{ fr->getColorSpace(position) };
     if (cs && *cs)
     {
-        out << YAML::Key << FileRuleUtils::ColorSpace << YAML::Value << std::string(cs);
+        out << YamlWrite::Key << FileRuleUtils::ColorSpace << YamlWrite::Value << std::string(cs);
     }
     const char * regex{ fr->getRegex(position) };
     if (regex && *regex)
     {
-        out << YAML::Key << FileRuleUtils::Regex << YAML::Value << std::string(regex);
+        out << YamlWrite::Key << FileRuleUtils::Regex << YamlWrite::Value << std::string(regex);
     }
     const char * pattern{ fr->getPattern(position) };
     if (pattern && *pattern)
     {
-        out << YAML::Key << FileRuleUtils::Pattern << YAML::Value << std::string(pattern);
+        out << YamlWrite::Key << FileRuleUtils::Pattern << YamlWrite::Value << std::string(pattern);
     }
     const char * extension{ fr->getExtension(position) };
     if (extension && *extension)
     {
-        out << YAML::Key << FileRuleUtils::Extension << YAML::Value << std::string(extension);
+        out << YamlWrite::Key << FileRuleUtils::Extension << YamlWrite::Value << std::string(extension);
     }
     const auto numKeys = fr->getNumCustomKeys(position);
     if (numKeys)
     {
-        out << YAML::Key << FileRuleUtils::CustomKey;
-        out << YAML::Value;
-        out << YAML::BeginMap;
+        out << YamlWrite::Key << FileRuleUtils::CustomKey;
+        out << YamlWrite::Value;
+        out << YamlWrite::BeginMap;
 
         for (size_t i = 0; i < numKeys; ++i)
         {
-            out << YAML::Key << fr->getCustomKeyName(position, i)
-                << YAML::Value << fr->getCustomKeyValue(position, i);
+            out << YamlWrite::Key << fr->getCustomKeyName(position, i)
+                << YamlWrite::Value << fr->getCustomKeyValue(position, i);
         }
-        out << YAML::EndMap;
+        out << YamlWrite::EndMap;
     }
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 // Viewing rules
 
-inline void load(const YAML::Node & node, ViewingRulesRcPtr & vr)
+inline void load(const YamlNode & node, ViewingRulesRcPtr & vr)
 {
     if (node.Tag() != "Rule")
         return;
@@ -4284,7 +4287,7 @@ inline void load(const YAML::Node & node, ViewingRulesRcPtr & vr)
         }
         else if (key == ViewingRuleUtils::ColorSpaces)
         {
-            if (iter->second.Type() == YAML::NodeType::Sequence)
+            if (iter->second.Type() == YamlNodeType::Sequence)
             {
                 load(iter->second, colorspaces);
             }
@@ -4297,7 +4300,7 @@ inline void load(const YAML::Node & node, ViewingRulesRcPtr & vr)
         }
         else if (key == ViewingRuleUtils::Encodings)
         {
-            if (iter->second.Type() == YAML::NodeType::Sequence)
+            if (iter->second.Type() == YamlNodeType::Sequence)
             {
                 load(iter->second, encodings);
             }
@@ -4350,17 +4353,17 @@ inline void load(const YAML::Node & node, ViewingRulesRcPtr & vr)
     }
 }
 
-inline void save(YAML::Emitter & out, ConstViewingRulesRcPtr & vr, size_t position)
+inline void save(YamlWrite::Emitter & out, ConstViewingRulesRcPtr & vr, size_t position)
 {
-    out << YAML::VerbatimTag("Rule");
-    out << YAML::Flow;
-    out << YAML::BeginMap;
-    out << YAML::Key << ViewingRuleUtils::Name << YAML::Value << vr->getName(position);
+    out << YamlWrite::VerbatimTag("Rule");
+    out << YamlWrite::Flow;
+    out << YamlWrite::BeginMap;
+    out << YamlWrite::Key << ViewingRuleUtils::Name << YamlWrite::Value << vr->getName(position);
     const size_t numcs = vr->getNumColorSpaces(position);
     if (numcs == 1)
     {
-        out << YAML::Key << ViewingRuleUtils::ColorSpaces;
-        out << YAML::Value << vr->getColorSpace(position, 0);
+        out << YamlWrite::Key << ViewingRuleUtils::ColorSpaces;
+        out << YamlWrite::Value << vr->getColorSpace(position, 0);
     }
     else if (numcs > 1)
     {
@@ -4369,14 +4372,14 @@ inline void save(YAML::Emitter & out, ConstViewingRulesRcPtr & vr, size_t positi
         {
             colorspaces.emplace_back(vr->getColorSpace(position, i));
         }
-        out << YAML::Key << ViewingRuleUtils::ColorSpaces;
-        out << YAML::Value << YAML::Flow << colorspaces;
+        out << YamlWrite::Key << ViewingRuleUtils::ColorSpaces;
+        out << YamlWrite::Value << YamlWrite::Flow << colorspaces;
     }
     const size_t numenc = vr->getNumEncodings(position);
     if (numenc == 1)
     {
-        out << YAML::Key << ViewingRuleUtils::Encodings;
-        out << YAML::Value << vr->getEncoding(position, 0);
+        out << YamlWrite::Key << ViewingRuleUtils::Encodings;
+        out << YamlWrite::Value << vr->getEncoding(position, 0);
     }
     else if (numenc > 1)
     {
@@ -4385,30 +4388,30 @@ inline void save(YAML::Emitter & out, ConstViewingRulesRcPtr & vr, size_t positi
         {
             encodings.emplace_back(vr->getEncoding(position, i));
         }
-        out << YAML::Key << ViewingRuleUtils::Encodings;
-        out << YAML::Value << YAML::Flow << encodings;
+        out << YamlWrite::Key << ViewingRuleUtils::Encodings;
+        out << YamlWrite::Value << YamlWrite::Flow << encodings;
     }
     const auto numKeys = vr->getNumCustomKeys(position);
     if (numKeys)
     {
-        out << YAML::Key << ViewingRuleUtils::CustomKey;
-        out << YAML::Value;
-        out << YAML::BeginMap;
+        out << YamlWrite::Key << ViewingRuleUtils::CustomKey;
+        out << YamlWrite::Value;
+        out << YamlWrite::BeginMap;
 
         for (size_t i = 0; i < numKeys; ++i)
         {
-            out << YAML::Key << vr->getCustomKeyName(position, i)
-                << YAML::Value << vr->getCustomKeyValue(position, i);
+            out << YamlWrite::Key << vr->getCustomKeyName(position, i)
+                << YamlWrite::Value << vr->getCustomKeyValue(position, i);
         }
-        out << YAML::EndMap;
+        out << YamlWrite::EndMap;
     }
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 
 // Config
 
-inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filename)
+inline void load(const YamlNode& node, ConfigRcPtr & config, const char* filename)
 {
 
     // check profile version
@@ -4507,7 +4510,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         else if(key == "environment")
         {
             mode = ENV_ENVIRONMENT_LOAD_PREDEFINED;
-            if(iter->second.Type() != YAML::NodeType::Map)
+            if(iter->second.Type() != YamlNodeType::Map)
             {
                 throwValueError(node.Tag(), iter->first, 
                                 "The value type of key 'environment' needs to be a map.");
@@ -4585,7 +4588,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if(key == "roles")
         {
-            if(iter->second.Type() != YAML::NodeType::Map)
+            if(iter->second.Type() != YamlNodeType::Map)
             {
                 throwValueError(node.Tag(), iter->first,
                                 "The value type of the key 'roles' needs to be a map.");
@@ -4606,14 +4609,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
                 throwError(iter->first, "Config v1 can't use 'file_rules'");
             }
 
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, "The 'file_rules' field needs to be a (- !<Rule>) list.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if (val.Tag() == "Rule")
                 {
@@ -4641,7 +4644,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "viewing_rules")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, "The 'viewing_rules' field needs to be a (- !<Rule>) list.");
             }
@@ -4650,7 +4653,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if (val.Tag() == "Rule")
                 {
@@ -4669,14 +4672,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "shared_views")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwValueError(node.Tag(), iter->first, "The view list is a sequence.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 View view;
                 load(val, view);
@@ -4688,7 +4691,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "displays")
         {
-            if(iter->second.Type() != YAML::NodeType::Map)
+            if(iter->second.Type() != YamlNodeType::Map)
             {
                 throwValueError(node.Tag(), iter->first,
                                 "The value type of the key 'displays' needs to be a map.");
@@ -4697,14 +4700,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
             {
                 const std::string & display = it->first.as<std::string>();
 
-                if (it->second.Type() != YAML::NodeType::Sequence)
+                if (it->second.Type() != YamlNodeType::Sequence)
                 {
                     throwValueError(node.Tag(), iter->first, "The view list is a sequence.");
                 }
 
                 for (std::size_t i = 0; i < it->second.size(); i++)
                 {
-                    const YAML::Node & node = it->second[i];
+                    const YamlNode & node = it->second[i];
 
                     if (node.Tag() == "View")
                     {
@@ -4729,14 +4732,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "virtual_display")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwValueError(node.Tag(), iter->first, "The view list is a sequence.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if (val.Tag() == "View")
                 {
@@ -4800,14 +4803,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if(key == "colorspaces")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, "'colorspaces' field needs to be a (- !<ColorSpace>) list.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if(val.Tag() == "ColorSpace")
                 {
@@ -4836,14 +4839,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "display_colorspaces")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, "'display_colorspaces' field needs to be a (- !<ColorSpace>) list.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if (val.Tag() == "ColorSpace")
                 {
@@ -4872,14 +4875,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "looks")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, "'looks' field needs to be a (- !<Look>) list.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if(val.Tag() == "Look")
                 {
@@ -4899,14 +4902,14 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "view_transforms")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, "'view_transforms' field needs to be a (- !<ViewTransform>) list.");
             }
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if (val.Tag() == "ViewTransform")
                 {
@@ -4932,7 +4935,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
         }
         else if (key == "named_transforms")
         {
-            if (iter->second.Type() != YAML::NodeType::Sequence)
+            if (iter->second.Type() != YamlNodeType::Sequence)
             {
                 throwError(iter->second, 
                            "'named_transforms' field needs to be a (- !<NamedTransform>) list.");
@@ -4940,7 +4943,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
 
             for (std::size_t i = 0; i < iter->second.size(); i++)
             {
-                const YAML::Node & val = iter->second[i];
+                const YamlNode & val = iter->second[i];
 
                 if (val.Tag() == "NamedTransform")
                 {
@@ -5054,7 +5057,7 @@ inline void load(const YAML::Node& node, ConfigRcPtr & config, const char* filen
 }
 
 // Build the vector for the View struct used below to build up what gets passed to
-// save(YAML::Emitter&, const View&).
+// save(YamlWrite::Emitter&, const View&).
 StringUtils::StringVec GetViewAliasVec(const Config & config, const char * display,
                                        const char * name)
 {
@@ -5068,7 +5071,7 @@ StringUtils::StringVec GetViewAliasVec(const Config & config, const char * displ
     return aliases;
 }
 
-inline void save(YAML::Emitter & out, const Config & config)
+inline void save(YamlWrite::Emitter & out, const Config & config)
 {
     std::stringstream ss;
     const unsigned configMajorVersion = config.getMajorVersion();
@@ -5080,31 +5083,31 @@ inline void save(YAML::Emitter & out, const Config & config)
         ss << "." << configMinorVersion;
     }
 
-    out << YAML::Block;
-    out << YAML::BeginMap;
-    out << YAML::Key << "ocio_profile_version" << YAML::Value << ss.str();
-    out << YAML::Newline;
-    out << YAML::Newline;
+    out << YamlWrite::Block;
+    out << YamlWrite::BeginMap;
+    out << YamlWrite::Key << "ocio_profile_version" << YamlWrite::Value << ss.str();
+    out << YamlWrite::Newline;
+    out << YamlWrite::Newline;
 
     if (configMajorVersion >= 2 || config.getNumEnvironmentVars() > 0)
     {
         // For v2 configs, write the environment section, even if empty.
-        out << YAML::Key << "environment";
-        out << YAML::Value << YAML::BeginMap;
+        out << YamlWrite::Key << "environment";
+        out << YamlWrite::Value << YamlWrite::BeginMap;
         for(int i = 0; i < config.getNumEnvironmentVars(); ++i)
         {   
             const char* name = config.getEnvironmentVarNameByIndex(i);
-            out << YAML::Key << name;
-            out << YAML::Value << config.getEnvironmentVarDefault(name);
+            out << YamlWrite::Key << name;
+            out << YamlWrite::Value << config.getEnvironmentVarDefault(name);
         }
-        out << YAML::EndMap;
-        out << YAML::Newline;
+        out << YamlWrite::EndMap;
+        out << YamlWrite::Newline;
     }
 
     if (configMajorVersion < 2)
     {
         // Save search paths as a single string.
-        out << YAML::Key << "search_path" << YAML::Value << config.getSearchPath();
+        out << YamlWrite::Key << "search_path" << YamlWrite::Value << config.getSearchPath();
     }
     else
     {
@@ -5117,47 +5120,47 @@ inline void save(YAML::Emitter & out, const Config & config)
 
         if (numSP == 0)
         {
-            out << YAML::Key << "search_path" << YAML::Value << "";
+            out << YamlWrite::Key << "search_path" << YamlWrite::Value << "";
         }
         else if (numSP == 1)
         {
-            out << YAML::Key << "search_path" << YAML::Value << searchPaths[0];
+            out << YamlWrite::Key << "search_path" << YamlWrite::Value << searchPaths[0];
         }
         else
         {
-            out << YAML::Key << "search_path" << YAML::Value << searchPaths;
+            out << YamlWrite::Key << "search_path" << YamlWrite::Value << searchPaths;
         }
     }
-    out << YAML::Key << "strictparsing" << YAML::Value << config.isStrictParsingEnabled();
+    out << YamlWrite::Key << "strictparsing" << YamlWrite::Value << config.isStrictParsingEnabled();
 
     if (configMajorVersion >= 2)
     {
         const char familySeparator = config.getFamilySeparator();
         if (familySeparator != '/')
         {
-            out << YAML::Key << "family_separator" << YAML::Value << familySeparator;
+            out << YamlWrite::Key << "family_separator" << YamlWrite::Value << familySeparator;
         }
     }
 
     std::vector<double> luma(3, 0.f);
     config.getDefaultLumaCoefs(&luma[0]);
-    out << YAML::Key << "luma" << YAML::Value << YAML::Flow << luma;
+    out << YamlWrite::Key << "luma" << YamlWrite::Value << YamlWrite::Flow << luma;
 
     if (configMajorVersion >= 2)
     {
         const std::string name{ config.getName() };
         if (!name.empty())
         {
-            out << YAML::Key << "name" << YAML::Value << name;
+            out << YamlWrite::Key << "name" << YamlWrite::Value << name;
         }
     }
     saveDescription(out, config.getDescription());
 
     // Roles
-    out << YAML::Newline;
-    out << YAML::Newline;
-    out << YAML::Key << "roles";
-    out << YAML::Value << YAML::BeginMap;
+    out << YamlWrite::Newline;
+    out << YamlWrite::Newline;
+    out << YamlWrite::Key << "roles";
+    out << YamlWrite::Value << YamlWrite::BeginMap;
     for(int i = 0; i < config.getNumRoles(); ++i)
     {
         const char* role = config.getRoleName(i);
@@ -5166,26 +5169,26 @@ inline void save(YAML::Emitter & out, const Config & config)
             // Note that no validation of the name strings is done here (e.g. to check that
             // they exist in the config) in order to enable serializing configs that are only
             // partially complete. The caller may use config->validate() first, if desired.
-            out << YAML::Key << role;
-            out << YAML::Value << config.getRoleColorSpace(i);
+            out << YamlWrite::Key << role;
+            out << YamlWrite::Value << config.getRoleColorSpace(i);
         }
     }
-    out << YAML::EndMap;
-    out << YAML::Newline;
+    out << YamlWrite::EndMap;
+    out << YamlWrite::Newline;
 
     // File rules
     if (configMajorVersion >= 2)
     {
         auto rules = config.getFileRules();
-        out << YAML::Newline;
-        out << YAML::Key << "file_rules";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "file_rules";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for (size_t i = 0; i < rules->getNumEntries(); ++i)
         {
             save(out, rules, i);
         }
-        out << YAML::EndSeq;
-        out << YAML::Newline;
+        out << YamlWrite::EndSeq;
+        out << YamlWrite::Newline;
     }
 
     // Viewing rules
@@ -5195,15 +5198,15 @@ inline void save(YAML::Emitter & out, const Config & config)
         const auto numRules = rules->getNumEntries();
         if (numRules)
         {
-            out << YAML::Newline;
-            out << YAML::Key << "viewing_rules";
-            out << YAML::Value << YAML::BeginSeq;
+            out << YamlWrite::Newline;
+            out << YamlWrite::Key << "viewing_rules";
+            out << YamlWrite::Value << YamlWrite::BeginSeq;
             for (size_t i = 0; i < numRules; ++i)
             {
                 save(out, rules, i);
             }
-            out << YAML::EndSeq;
-            out << YAML::Newline;
+            out << YamlWrite::EndSeq;
+            out << YamlWrite::Newline;
         }
     }
 
@@ -5211,9 +5214,9 @@ inline void save(YAML::Emitter & out, const Config & config)
     const int numSharedViews = config.getNumViews(VIEW_SHARED, nullptr);
     if (numSharedViews)
     {
-        out << YAML::Newline;
-        out << YAML::Key << "shared_views";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "shared_views";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for (int v = 0; v < numSharedViews; ++v)
         {
             const char * name = config.getView(VIEW_SHARED, nullptr, v);
@@ -5226,14 +5229,14 @@ inline void save(YAML::Emitter & out, const Config & config)
                               GetViewAliasVec(config, nullptr, name) };
             save(out, dview);
         }
-        out << YAML::EndSeq;
-        out << YAML::Newline;
+        out << YamlWrite::EndSeq;
+        out << YamlWrite::Newline;
     }
 
     // Displays.
-    out << YAML::Newline;
-    out << YAML::Key << "displays";
-    out << YAML::Value << YAML::BeginMap;
+    out << YamlWrite::Newline;
+    out << YamlWrite::Key << "displays";
+    out << YamlWrite::Value << YamlWrite::BeginMap;
     // All displays are saved (not just active ones).
     for(int i = 0; i < config.getNumDisplaysAll(); ++i)
     {
@@ -5242,8 +5245,8 @@ inline void save(YAML::Emitter & out, const Config & config)
         {
             const char * display = config.getDisplayAll(i);
 
-            out << YAML::Key << display;
-            out << YAML::Value << YAML::BeginSeq;
+            out << YamlWrite::Key << display;
+            out << YamlWrite::Value << YamlWrite::BeginSeq;
             for(int v = 0; v < config.getNumViews(VIEW_DISPLAY_DEFINED, display); ++v)
             {
                 const char * name = config.getView(VIEW_DISPLAY_DEFINED, display, v);
@@ -5264,13 +5267,13 @@ inline void save(YAML::Emitter & out, const Config & config)
             }
             if (!sharedViews.empty())
             {
-                out << YAML::VerbatimTag("Views");
-                out << YAML::Flow << sharedViews;
+                out << YamlWrite::VerbatimTag("Views");
+                out << YamlWrite::Flow << sharedViews;
             }
-            out << YAML::EndSeq;
+            out << YamlWrite::EndSeq;
         }
     }
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 
     // Virtual Display.
     const int numVirtualDisplayViews
@@ -5279,10 +5282,10 @@ inline void save(YAML::Emitter & out, const Config & config)
 
     if (configMajorVersion >= 2 && numVirtualDisplayViews > 0)
     {
-        out << YAML::Newline;
-        out << YAML::Newline;
-        out << YAML::Key << "virtual_display";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "virtual_display";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
     
         for(int idx = 0; idx < config.getVirtualDisplayNumViews(VIEW_DISPLAY_DEFINED); ++idx)
         {
@@ -5303,22 +5306,22 @@ inline void save(YAML::Emitter & out, const Config & config)
         }
         if (!sharedViews.empty())
         {
-            out << YAML::VerbatimTag("Views");
-            out << YAML::Flow << sharedViews;
+            out << YamlWrite::VerbatimTag("Views");
+            out << YamlWrite::Flow << sharedViews;
         }
     
-        out << YAML::EndSeq;
+        out << YamlWrite::EndSeq;
     }
 
-    out << YAML::Newline;
-    out << YAML::Newline;
+    out << YamlWrite::Newline;
+    out << YamlWrite::Newline;
 
     if (config.getUseDisplayAliases())
     {
-        out << YAML::Key << "use_display_aliases" << YAML::Value << true;
+        out << YamlWrite::Key << "use_display_aliases" << YamlWrite::Value << true;
     }
 
-    out << YAML::Key << "active_displays";
+    out << YamlWrite::Key << "active_displays";
     StringUtils::StringVec active_displays;
     int nDisplays = config.getNumActiveDisplays();
     active_displays.reserve( nDisplays );
@@ -5328,9 +5331,9 @@ inline void save(YAML::Emitter & out, const Config & config)
     }
 
     // The YAML library will wrap names that use a comma in quotes.
-    out << YAML::Value << YAML::Flow << active_displays;
+    out << YamlWrite::Value << YamlWrite::Flow << active_displays;
 
-    out << YAML::Key << "active_views";
+    out << YamlWrite::Key << "active_views";
     StringUtils::StringVec active_views;
     int nViews = config.getNumActiveViews();
     active_views.reserve( nViews );
@@ -5340,54 +5343,54 @@ inline void save(YAML::Emitter & out, const Config & config)
     }
     
     // The YAML library will wrap names that use a comma in quotes.
-    out << YAML::Value << YAML::Flow << active_views;
+    out << YamlWrite::Value << YamlWrite::Flow << active_views;
 
     const std::string inactiveCSs = config.getInactiveColorSpaces();
     if (!inactiveCSs.empty())
     {
         const StringUtils::StringVec inactive_colorspaces{ SplitStringEnvStyle(inactiveCSs) };
-        out << YAML::Key << "inactive_colorspaces";
-        out << YAML::Value << YAML::Flow << inactive_colorspaces;
+        out << YamlWrite::Key << "inactive_colorspaces";
+        out << YamlWrite::Value << YamlWrite::Flow << inactive_colorspaces;
     }
 
-    out << YAML::Newline;
+    out << YamlWrite::Newline;
 
     // Looks
     if(config.getNumLooks() > 0)
     {
-        out << YAML::Newline;
-        out << YAML::Key << "looks";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "looks";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for(int i = 0; i < config.getNumLooks(); ++i)
         {
             const char* name = config.getLookNameByIndex(i);
             save(out, config.getLook(name), configMajorVersion);
         }
-        out << YAML::EndSeq;
-        out << YAML::Newline;
+        out << YamlWrite::EndSeq;
+        out << YamlWrite::Newline;
     }
 
     // View transforms.
     const std::string defVT{ config.getDefaultViewTransformName() };
     if (!defVT.empty())
     {
-        out << YAML::Newline;
-        out << YAML::Key << "default_view_transform" << YAML::Value << defVT;
-        out << YAML::Newline;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "default_view_transform" << YamlWrite::Value << defVT;
+        out << YamlWrite::Newline;
     }
     const int numVT = config.getNumViewTransforms();
     if (numVT > 0)
     {
-        out << YAML::Newline;
-        out << YAML::Key << "view_transforms";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "view_transforms";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for (int i = 0; i < numVT; ++i)
         {
             auto name = config.getViewTransformNameByIndex(i);
             auto vt = config.getViewTransform(name);
             save(out, vt, configMajorVersion);
         }
-        out << YAML::EndSeq;
+        out << YamlWrite::EndSeq;
     }
 
     std::vector<ConstColorSpaceRcPtr> sceneCS;
@@ -5418,45 +5421,45 @@ inline void save(YAML::Emitter & out, const Config & config)
     // Display ColorSpaces
     if (!displayCS.empty())
     {
-        out << YAML::Newline;
-        out << YAML::Key << "display_colorspaces";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "display_colorspaces";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for (const auto & cs : displayCS)
         {
             save(out, cs, configMajorVersion);
         }
-        out << YAML::EndSeq;
+        out << YamlWrite::EndSeq;
     }
 
     // ColorSpaces
     {
-        out << YAML::Newline;
-        out << YAML::Key << "colorspaces";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "colorspaces";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for (const auto & cs : sceneCS)
         {
             save(out, cs, configMajorVersion);
         }
-        out << YAML::EndSeq;
+        out << YamlWrite::EndSeq;
     }
 
     // Named transforms.
     const int numNT = config.getNumNamedTransforms(NAMEDTRANSFORM_ALL);
     if (numNT > 0)
     {
-        out << YAML::Newline;
-        out << YAML::Key << "named_transforms";
-        out << YAML::Value << YAML::BeginSeq;
+        out << YamlWrite::Newline;
+        out << YamlWrite::Key << "named_transforms";
+        out << YamlWrite::Value << YamlWrite::BeginSeq;
         for (int i = 0; i < numNT; ++i)
         {
             auto name = config.getNamedTransformNameByIndex(NAMEDTRANSFORM_ALL, i);
             auto nt = config.getNamedTransform(name);
             save(out, nt, configMajorVersion);
         }
-        out << YAML::EndSeq;
+        out << YamlWrite::EndSeq;
     }
 
-    out << YAML::EndMap;
+    out << YamlWrite::EndMap;
 }
 
 }
@@ -5467,7 +5470,7 @@ void OCIOYaml::Read(std::istream & istream, ConfigRcPtr & config, const char * f
 {
     try
     {
-        YAML::Node node = YAML::Load(istream);
+        YamlNode node = YamlLoad(istream);
         load(node, config, filename);
     }
     catch(const std::exception & e)
@@ -5486,11 +5489,11 @@ void OCIOYaml::Read(std::istream & istream, ConfigRcPtr & config, const char * f
 
 void OCIOYaml::Write(std::ostream & ostream, const Config & config)
 {
-    YAML::Emitter out;
+    YamlWrite::Emitter out;
     out.SetDoublePrecision(std::numeric_limits<double>::digits10);
     out.SetFloatPrecision(7);
     save(out, config);
-    ostream << out.c_str();
+    ostream << out.str();
 }
 
 } // namespace OCIO_NAMESPACE

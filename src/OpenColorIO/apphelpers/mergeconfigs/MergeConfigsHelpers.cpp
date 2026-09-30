@@ -417,7 +417,7 @@ ConstConfigMergerRcPtr ConfigMerger::Impl::Read(std::istream & istream, const ch
 
     try
     {
-        YAML::Node node = YAML::Load(istream);
+        YamlRead::Node node = YamlRead::Load(istream);
         int numOfMerges = ociomParser.countMerges(node);
 
         merger = ConfigMerger::Create();

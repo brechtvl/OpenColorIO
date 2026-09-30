@@ -53,10 +53,10 @@ function(add_ocio_test NAME SOURCES TESTS PRIVATE_INCLUDES)
             sampleicc::sampleicc
             unittest_data
             utils::strings
-            yaml-cpp::yaml-cpp
             testutils
             MINIZIP::minizip-ng
             xxHash
+            rapidyaml
     )
 
     if(OCIO_USE_SIMD AND OCIO_USE_SSE2NEON AND COMPILER_SUPPORTS_SSE_WITH_SSE2NEON)
@@ -206,6 +206,8 @@ set(SOURCES
     transforms/builtins/RedCameras.cpp
     transforms/builtins/SonyCameras.cpp
     SystemMonitor.cpp
+    YamlEmitter.cpp
+    YamlNode.cpp
 )
 
 set(TESTS
