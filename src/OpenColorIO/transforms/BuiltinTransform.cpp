@@ -62,9 +62,10 @@ size_t BuiltinTransformImpl::getTransformIndex() const noexcept
 
 void BuiltinTransformImpl::setStyle(const char * style)
 {
-    for (size_t index = 0; index < BuiltinTransformRegistry::Get()->getNumBuiltins(); ++index)
+    ConstBuiltinTransformRegistryRcPtr registry = BuiltinTransformRegistry::Get();
+    for (size_t index = 0; index < registry->getNumBuiltins(); ++index)
     {
-        if (0 == Platform::Strcasecmp(style, BuiltinTransformRegistry::Get()->getBuiltinStyle(index)))
+        if (0 == Platform::Strcasecmp(style, registry->getBuiltinStyle(index)))
         {
             m_transformIndex = index;
             return;
