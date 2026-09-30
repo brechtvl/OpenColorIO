@@ -59,13 +59,6 @@ ocio_handle_dependency(  expat REQUIRED ALLOW_INSTALL
                          RECOMMENDED_VERSION 2.8.4
                          RECOMMENDED_VERSION_REASON "CVE fixes and latest version tested with OCIO")
 
-# yaml-cpp
-# https://github.com/jbeder/yaml-cpp
-ocio_handle_dependency(  yaml-cpp REQUIRED ALLOW_INSTALL
-                         MIN_VERSION 0.8.0
-                         RECOMMENDED_VERSION 0.9.0
-                         RECOMMENDED_VERSION_REASON "Latest version tested with OCIO")
-
 # pystring
 # https://github.com/imageworks/pystring
 ocio_handle_dependency(  pystring REQUIRED ALLOW_INSTALL

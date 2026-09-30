@@ -125,7 +125,6 @@ Required components:
 - C++ 17-23 compiler (gcc, clang, msvc)
 - CMake >= 3.14
 - \*Expat >= 2.6.0 (XML parser for CDL/CLF/CTF)
-- \*yaml-cpp >= 0.8.0 (YAML parser for Configs)
 - \*Imath >= 3.1.1 (for half domain LUTs)
 - \*pystring >= 1.1.3
 - \*minizip-ng >= 4.0.0 (for config archiving)
@@ -204,7 +203,7 @@ Usually CMake will use the dynamic library rather than static, if both are prese
 you may set <package_name>_STATIC_LIBRARY to ON to request use of the static one. If only the 
 static library is present (such as when OCIO builds the dependency), then the option is not needed.
 The following packages support this option:
-``expat``, ``yaml-cpp``, ``Imath``, ``lcms2``, and ``minizip-ng``. Using CMake 3.24+, it is
+``expat``, ``Imath``, ``lcms2``, and ``minizip-ng``. Using CMake 3.24+, it is
 possible to prefer the static version of ``ZLIB`` with ``-DZLIB_USE_STATIC_LIBS=ON``.
 
 The package names used by OCIO are as follows (note that these are case-sensitive):
@@ -212,7 +211,6 @@ The package names used by OCIO are as follows (note that these are case-sensitiv
 Required:
 
 - ``expat``
-- ``yaml-cpp``
 - ``Imath``
 - ``pystring``
 - ``ZLIB``
@@ -243,7 +241,7 @@ Please note that if you build a static OCIO library, it will not contain the lib
 for the external packages and so you will need to list those separately when linking your
 client application.  If you had OCIO download and build these packages, you will
 find them under your build directory in ``ext/dist/lib``.  The libraries that are
-needed are: ``expat``, ``yaml-cpp``, ``Imath``, ``pystring``, ``ZLIB``, and ``minizip-ng``.
+needed are: ``expat``, ``Imath``, ``pystring``, ``ZLIB``, and ``minizip-ng``.
 
 The OCIO ``make install`` step will install CMake configuration files that may be used
 by applications that consume OCIO to find and utilize OCIO during their own build process.
