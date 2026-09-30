@@ -3,6 +3,8 @@
 
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 
 #include <OpenColorIO/OpenColorIO.h>
 
@@ -12,6 +14,83 @@
 
 namespace OCIO_NAMESPACE
 {
+
+// Case insensitive map from color space names and aliases to indices.
+// Keys point to strings owned by the color spaces, so a color space
+// must be removed before it is destroyed.
+class ColorSpaceIndexMap
+{
+public:
+    int find(const char * name) const
+    {
+        const auto it = m_map.find(name);
+        return (it != m_map.end()) ? it->second : -1;
+    }
+
+    void add(const ColorSpace & cs, int idx)
+    {
+        m_map.emplace(cs.getName(), idx);
+        const size_t numAliases = cs.getNumAliases();
+        for (size_t aidx = 0; aidx < numAliases; ++aidx)
+        {
+            m_map.emplace(cs.getAlias(aidx), idx);
+        }
+    }
+
+    void remove(const ColorSpace & cs, int idx)
+    {
+        removeKey(cs.getName(), idx);
+        const size_t numAliases = cs.getNumAliases();
+        for (size_t aidx = 0; aidx < numAliases; ++aidx)
+        {
+            removeKey(cs.getAlias(aidx), idx);
+        }
+    }
+
+    void rebuild(const std::vector<ColorSpaceRcPtr> & colorSpaces)
+    {
+        m_map.clear();
+        for (size_t idx = 0; idx < colorSpaces.size(); ++idx)
+        {
+            add(*colorSpaces[idx], static_cast<int>(idx));
+        }
+    }
+
+    void clear()
+    {
+        m_map.clear();
+    }
+
+private:
+    struct CaseInsensitiveHash
+    {
+        size_t operator()(std::string_view str) const noexcept
+        {
+            return StringUtils::Hash(str);
+        }
+    };
+
+    struct CaseInsensitiveEqual
+    {
+        bool operator()(std::string_view a, std::string_view b) const noexcept
+        {
+            return StringUtils::Compare(a, b);
+        }
+    };
+
+    void removeKey(const char * key, int idx)
+    {
+        // Only remove the entry if it belongs to this index, in case another color space
+        // uses the same name.
+        const auto it = m_map.find(key);
+        if (it != m_map.end() && it->second == idx)
+        {
+            m_map.erase(it);
+        }
+    }
+
+    std::unordered_map<std::string_view, int, CaseInsensitiveHash, CaseInsensitiveEqual> m_map;
+};
 
 class ColorSpaceSet::Impl
 {
@@ -31,6 +110,7 @@ public:
             {
                 m_colorSpaces.push_back(cs->createEditableCopy());
             }
+            m_indexMap.rebuild(m_colorSpaces);
         }
         return *this;
     }
@@ -91,22 +171,7 @@ public:
         // Search for name and aliases.
         if (csName && *csName)
         {
-            const std::string_view str(csName);
-            for (size_t idx = 0; idx < m_colorSpaces.size(); ++idx)
-            {
-                if (StringUtils::Compare(m_colorSpaces[idx]->getName(), str))
-                {
-                    return static_cast<int>(idx);
-                }
-                const size_t numAliases = m_colorSpaces[idx]->getNumAliases();
-                for (size_t aidx = 0; aidx < numAliases; ++aidx)
-                {
-                    if (StringUtils::Compare(m_colorSpaces[idx]->getAlias(aidx), str))
-                    {
-                        return static_cast<int>(idx);
-                    }
-                }
-            }
+            return m_indexMap.find(csName);
         }
 
         return -1;
@@ -163,11 +228,15 @@ public:
         if (replaceIdx != (size_t)-1)
         {
             // The color space replaces the existing one.
+            const int idx = static_cast<int>(replaceIdx);
+            m_indexMap.remove(*m_colorSpaces[replaceIdx], idx);
             m_colorSpaces[replaceIdx] = cs->createEditableCopy();
+            m_indexMap.add(*m_colorSpaces[replaceIdx], idx);
             return;
         }
 
         m_colorSpaces.push_back(cs->createEditableCopy());
+        m_indexMap.add(*m_colorSpaces.back(), static_cast<int>(m_colorSpaces.size() - 1));
     }
 
     void add(const Impl & rhs)
@@ -187,6 +256,7 @@ public:
             if (StringUtils::Compare((*itr)->getName(), csName))
             {
                 m_colorSpaces.erase(itr);
+                m_indexMap.rebuild(m_colorSpaces);
                 return;
             }
         }
@@ -203,11 +273,13 @@ public:
     void clear()
     {
         m_colorSpaces.clear();
+        m_indexMap.clear();
     }
 
 private:
     typedef std::vector<ColorSpaceRcPtr> ColorSpaceVec;
     ColorSpaceVec m_colorSpaces;
+    ColorSpaceIndexMap m_indexMap;
 };
 
 

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -99,6 +100,19 @@ inline bool Compare(std::string_view left, std::string_view right)
         }
     }
     return true;
+}
+
+// Case insensitive hash of a string.
+inline size_t Hash(std::string_view str)
+{
+    // 64-bit FNV-1a hash.
+    uint64_t hash = 14695981039346656037ull;
+    for (const char c : str)
+    {
+        hash ^= Lower((unsigned char)c);
+        hash *= 1099511628211ull;
+    }
+    return static_cast<size_t>(hash);
 }
 
 // Return true if the string ends with the suffix.
