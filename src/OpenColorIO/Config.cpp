@@ -547,6 +547,9 @@ public:
     };
     StringUtils::StringVec buildInactiveNamesList(InactiveType type) const;
     void refreshActiveColorSpaces();
+    // Faster incremental refresh when appending.
+    void refreshActiveColorSpaceNames(bool append = false);
+    void refreshActiveNamedTransformNames(bool append = false);
 
     ConstViewTransformRcPtr getViewTransform(const char * name) const noexcept
     {
@@ -2778,11 +2781,13 @@ void Config::addColorSpace(const ConstColorSpaceRcPtr & original)
     }
 
     // This is verifying that name and aliases are fine with other color spaces.
+    const int numColorSpaces = getImpl()->m_allColorSpaces->getNumColorSpaces();
     getImpl()->m_allColorSpaces->addColorSpace(original);
+    const bool appended = getImpl()->m_allColorSpaces->getNumColorSpaces() > numColorSpaces;
 
     AutoMutex lock(getImpl()->m_cacheidMutex);
     getImpl()->resetCacheIDs();
-    getImpl()->refreshActiveColorSpaces();
+    getImpl()->refreshActiveColorSpaceNames(appended);
 }
 
 void Config::removeColorSpace(const char * name)
@@ -3527,7 +3532,7 @@ void Config::addNamedTransform(const ConstNamedTransformRcPtr & nt)
     }
 
     getImpl()->resetCacheIDs();
-    getImpl()->refreshActiveColorSpaces();
+    getImpl()->refreshActiveNamedTransformNames(replaceIdx == (size_t)-1);
 }
 
 void Config::removeNamedTransform(const char * name)
@@ -6040,10 +6045,29 @@ StringUtils::StringVec Config::Impl::buildInactiveNamesList(InactiveType type) c
 
 void Config::Impl::refreshActiveColorSpaces()
 {
-    m_activeColorSpaceNames.clear();
-    m_activeNamedTransformNames.clear();
+    refreshActiveColorSpaceNames();
+    refreshActiveNamedTransformNames();
+}
 
-    m_inactiveColorSpaceNames = buildInactiveNamesList(Impl::INACTIVE_COLORSPACE);
+void Config::Impl::refreshActiveColorSpaceNames(bool append)
+{
+    StringUtils::StringVec inactiveNames = buildInactiveNamesList(Impl::INACTIVE_COLORSPACE);
+
+    if (append && inactiveNames == m_inactiveColorSpaceNames)
+    {
+        // Only the appended color space needs to be added, unless it makes more inactive
+        // names resolve.
+        const int numColorSpaces = m_allColorSpaces->getNumColorSpaces();
+        const char * name = m_allColorSpaces->getColorSpaceNameByIndex(numColorSpaces - 1);
+        if (std::find(inactiveNames.begin(), inactiveNames.end(), name) == inactiveNames.end())
+        {
+            m_activeColorSpaceNames.push_back(name);
+        }
+        return;
+    }
+
+    m_activeColorSpaceNames.clear();
+    m_inactiveColorSpaceNames = std::move(inactiveNames);
 
     for (int i = 0; i < m_allColorSpaces->getNumColorSpaces(); ++i)
     {
@@ -6066,8 +6090,26 @@ void Config::Impl::refreshActiveColorSpaces()
             m_activeColorSpaceNames.push_back(cs->getName());
         }
     }
+}
 
-    m_inactiveNamedTransformNames = buildInactiveNamesList(Impl::INACTIVE_NAMEDTRANSFORM);
+void Config::Impl::refreshActiveNamedTransformNames(bool append)
+{
+    StringUtils::StringVec inactiveNames = buildInactiveNamesList(Impl::INACTIVE_NAMEDTRANSFORM);
+
+    if (append && inactiveNames == m_inactiveNamedTransformNames)
+    {
+        // Only the appended named transform needs to be added, unless it makes more inactive
+        // names resolve.
+        const char * name = m_allNamedTransforms.back()->getName();
+        if (std::find(inactiveNames.begin(), inactiveNames.end(), name) == inactiveNames.end())
+        {
+            m_activeNamedTransformNames.push_back(name);
+        }
+        return;
+    }
+
+    m_activeNamedTransformNames.clear();
+    m_inactiveNamedTransformNames = std::move(inactiveNames);
 
     for (const auto & nt : m_allNamedTransforms)
     {
