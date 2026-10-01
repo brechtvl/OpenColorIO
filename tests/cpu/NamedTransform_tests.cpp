@@ -1566,3 +1566,31 @@ OCIO_ADD_TEST(Config, inactive_named_transform_precedence)
     OCIO_CHECK_EQUAL(config->getNamedTransformNameByIndex(0), std::string("nt2"));
     OCIO_CHECK_EQUAL(config->getNamedTransformNameByIndex(1), std::string("nt3"));
 }
+
+OCIO_ADD_TEST(Config, remove_named_transform)
+{
+    // Removing a named transform must update the active list, also when another named
+    // transform is added afterwards.
+
+    OCIO::ConfigRcPtr config = OCIO::Config::CreateRaw()->createEditableCopy();
+
+    auto nt = OCIO::NamedTransform::Create();
+    nt->setTransform(OCIO::MatrixTransform::Create(), OCIO::TRANSFORM_DIR_FORWARD);
+
+    nt->setName("nt1");
+    OCIO_CHECK_NO_THROW(config->addNamedTransform(nt));
+    nt->setName("nt2");
+    OCIO_CHECK_NO_THROW(config->addNamedTransform(nt));
+    OCIO_REQUIRE_EQUAL(config->getNumNamedTransforms(), 2);
+
+    OCIO_CHECK_NO_THROW(config->removeNamedTransform("NT1"));
+    OCIO_REQUIRE_EQUAL(config->getNumNamedTransforms(OCIO::NAMEDTRANSFORM_ALL), 1);
+    OCIO_REQUIRE_EQUAL(config->getNumNamedTransforms(), 1);
+    OCIO_CHECK_EQUAL(config->getNamedTransformNameByIndex(0), std::string("nt2"));
+
+    nt->setName("nt3");
+    OCIO_CHECK_NO_THROW(config->addNamedTransform(nt));
+    OCIO_REQUIRE_EQUAL(config->getNumNamedTransforms(), 2);
+    OCIO_CHECK_EQUAL(config->getNamedTransformNameByIndex(0), std::string("nt2"));
+    OCIO_CHECK_EQUAL(config->getNamedTransformNameByIndex(1), std::string("nt3"));
+}

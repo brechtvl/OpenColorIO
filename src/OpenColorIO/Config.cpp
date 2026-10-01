@@ -1176,6 +1176,11 @@ public:
 
             m_allColorSpaces->removeColorSpace(colorSpaceName.c_str());
 
+            // Keep active color spaces in sync, incremental refresh relies on it.
+            AutoMutex lock(m_cacheidMutex);
+            resetCacheIDs();
+            refreshActiveColorSpaces();
+
             throw;
         }
 
@@ -3544,7 +3549,7 @@ void Config::removeNamedTransform(const char * name)
         if (StringUtils::Compare((*itr)->getName(), name))
         {
             getImpl()->m_allNamedTransforms.erase(itr);
-            return;
+            break;
         }
     }
 
