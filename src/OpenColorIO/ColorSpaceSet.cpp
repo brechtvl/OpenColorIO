@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Copyright Contributors to the OpenColorIO Project.
 
+#include <iterator>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -16,34 +18,31 @@ namespace OCIO_NAMESPACE
 {
 
 // Case insensitive map from color space names and aliases to indices.
-// Keys point to strings owned by the color spaces, so a color space
-// must be removed before it is destroyed.
 class ColorSpaceIndexMap
 {
 public:
     int find(const char * name) const
     {
         const auto it = m_map.find(name);
-        return (it != m_map.end()) ? it->second : -1;
+        return (it != m_map.end()) ? it->second.index : -1;
     }
 
     void add(const ColorSpace & cs, int idx)
     {
-        m_map.emplace(cs.getName(), idx);
+        addKey(cs.getName(), idx);
         const size_t numAliases = cs.getNumAliases();
         for (size_t aidx = 0; aidx < numAliases; ++aidx)
         {
-            m_map.emplace(cs.getAlias(aidx), idx);
+            addKey(cs.getAlias(aidx), idx);
         }
     }
 
-    void remove(const ColorSpace & cs, int idx)
+    // Remove all names and aliases of the color space at this index.
+    void remove(int idx)
     {
-        removeKey(cs.getName(), idx);
-        const size_t numAliases = cs.getNumAliases();
-        for (size_t aidx = 0; aidx < numAliases; ++aidx)
+        for (auto it = m_map.begin(); it != m_map.end();)
         {
-            removeKey(cs.getAlias(aidx), idx);
+            it = (it->second.index == idx) ? m_map.erase(it) : std::next(it);
         }
     }
 
@@ -78,18 +77,25 @@ private:
         }
     };
 
-    void removeKey(const char * key, int idx)
+    struct Entry
     {
-        // Only remove the entry if it belongs to this index, in case another color space
-        // uses the same name.
-        const auto it = m_map.find(key);
-        if (it != m_map.end() && it->second == idx)
-        {
-            m_map.erase(it);
-        }
+        // Owns the string the key points to. Not pointing to the color space strings, as
+        // these can still be modified through the Python bindings, which ignore const.
+        std::unique_ptr<std::string> name;
+        int index;
+    };
+
+    void addKey(const char * key, int idx)
+    {
+        // Heap allocated, so the string data does not move along with the entry.
+        auto name = std::make_unique<std::string>(key);
+        const std::string_view view = *name;
+        // Keep the first color space using the name, matching linear search order.
+        m_map.try_emplace(view, Entry{ std::move(name), idx });
     }
 
-    std::unordered_map<std::string_view, int, CaseInsensitiveHash, CaseInsensitiveEqual> m_map;
+    // String view keys allow lookup without std::string construction.
+    std::unordered_map<std::string_view, Entry, CaseInsensitiveHash, CaseInsensitiveEqual> m_map;
 };
 
 class ColorSpaceSet::Impl
@@ -229,7 +235,7 @@ public:
         {
             // The color space replaces the existing one.
             const int idx = static_cast<int>(replaceIdx);
-            m_indexMap.remove(*m_colorSpaces[replaceIdx], idx);
+            m_indexMap.remove(idx);
             m_colorSpaces[replaceIdx] = cs->createEditableCopy();
             m_indexMap.add(*m_colorSpaces[replaceIdx], idx);
             return;

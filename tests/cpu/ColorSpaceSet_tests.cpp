@@ -314,3 +314,43 @@ OCIO_ADD_TEST(ColorSpaceSet, operations_on_set)
 
     OCIO_CHECK_EQUAL(css4->getNumColorSpaces(), 0);
 }
+
+OCIO_ADD_TEST(ColorSpaceSet, modified_color_space)
+{
+    // The Python bindings ignore const, so color spaces owned by the set can be modified.
+    // Lookups must not access the modified strings.
+
+    OCIO::ColorSpaceSetRcPtr css = OCIO::ColorSpaceSet::Create();
+
+    OCIO::ColorSpaceRcPtr cs = OCIO::ColorSpace::Create();
+    cs->setName("cs1");
+    cs->addAlias("an alias long enough to not fit in a small string buffer");
+    OCIO_CHECK_NO_THROW(css->addColorSpace(cs));
+
+    OCIO::ColorSpaceRcPtr owned
+        = std::const_pointer_cast<OCIO::ColorSpace>(css->getColorSpace("cs1"));
+    owned->clearAliases();
+
+    OCIO_CHECK_EQUAL(
+        css->getColorSpaceIndex("an alias long enough to not fit in a small string buffer"), 0);
+
+    // Replacing the color space removes the alias it no longer has.
+    cs->clearAliases();
+    cs->addAlias("alias2");
+    OCIO_CHECK_NO_THROW(css->addColorSpace(cs));
+
+    OCIO_REQUIRE_EQUAL(css->getNumColorSpaces(), 1);
+    OCIO_CHECK_EQUAL(
+        css->getColorSpaceIndex("an alias long enough to not fit in a small string buffer"), -1);
+    OCIO_CHECK_EQUAL(css->getColorSpaceIndex("CS1"), 0);
+    OCIO_CHECK_EQUAL(css->getColorSpaceIndex("alias2"), 0);
+
+    // Removal finds the color space by its current name.
+    owned = std::const_pointer_cast<OCIO::ColorSpace>(css->getColorSpace("cs1"));
+    owned->setName("cs2");
+
+    OCIO_CHECK_NO_THROW(css->removeColorSpace("cs2"));
+    OCIO_CHECK_EQUAL(css->getNumColorSpaces(), 0);
+    OCIO_CHECK_EQUAL(css->getColorSpaceIndex("cs1"), -1);
+    OCIO_CHECK_EQUAL(css->getColorSpaceIndex("alias2"), -1);
+}
